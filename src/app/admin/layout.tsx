@@ -33,6 +33,7 @@ export default async function AdminLayout({
 
   const navItems = [
     { href: "/admin", label: "Dashboard / Recaudos", icon: LayoutDashboard },
+    { href: "/admin/contabilidad", label: "Contabilidad y Gastos", icon: DollarSign },
     { href: "/admin/clientes", label: "Clientes y Máquinas", icon: Building2 },
     { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
     { href: "/admin/rutas", label: "Rutas y Asignaciones", icon: MapPin },

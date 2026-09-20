@@ -13,6 +13,8 @@ interface EditarClienteModalProps {
     contacto: string;
     whatsapp: string;
     activo?: boolean;
+    latitud?: number | null;
+    longitud?: number | null;
   };
   onClose: () => void;
 }
@@ -152,6 +154,35 @@ export const EditarClienteModal: React.FC<EditarClienteModalProps> = ({
                   className="w-full pl-8 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white font-mono"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
+                Latitud GPS (Opcional)
+              </label>
+              <input
+                type="number"
+                step="any"
+                name="latitud"
+                defaultValue={cliente.latitud ?? ""}
+                placeholder="ej. 4.6543"
+                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
+                Longitud GPS (Opcional)
+              </label>
+              <input
+                type="number"
+                step="any"
+                name="longitud"
+                defaultValue={cliente.longitud ?? ""}
+                placeholder="ej. -74.0892"
+                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white font-mono"
+              />
             </div>
           </div>
 

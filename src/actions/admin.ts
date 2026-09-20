@@ -715,6 +715,8 @@ export async function obtenerClientes() {
         contacto: c.contacto,
         whatsapp: c.whatsapp,
         activo: c.activo,
+        latitud: c.latitud,
+        longitud: c.longitud,
         maquinas: c.maquinas.map(mapMaquina),
       })),
       maquinasSinAsignar: maquinasSinAsignar.map(mapMaquina),
@@ -746,6 +748,10 @@ export async function crearCliente(formData: FormData) {
     const direccion = formData.get("direccion")?.toString().trim();
     const contacto = formData.get("contacto")?.toString().trim();
     const whatsapp = formData.get("whatsapp")?.toString().trim();
+    const latitudStr = formData.get("latitud")?.toString();
+    const longitudStr = formData.get("longitud")?.toString();
+    const latitud = latitudStr && !isNaN(parseFloat(latitudStr)) ? parseFloat(latitudStr) : null;
+    const longitud = longitudStr && !isNaN(parseFloat(longitudStr)) ? parseFloat(longitudStr) : null;
 
     if (!razonSocial || !sede || !direccion || !contacto || !whatsapp) {
       return { success: false, error: "Todos los campos son obligatorios" };
@@ -758,6 +764,8 @@ export async function crearCliente(formData: FormData) {
         direccion,
         contacto,
         whatsapp,
+        latitud,
+        longitud,
       },
     });
 
@@ -780,6 +788,10 @@ export async function actualizarCliente(formData: FormData) {
     const contacto = formData.get("contacto")?.toString().trim();
     const whatsapp = formData.get("whatsapp")?.toString().trim();
     const activo = formData.get("activo") === "true" || formData.get("activo") === "on";
+    const latitudStr = formData.get("latitud")?.toString();
+    const longitudStr = formData.get("longitud")?.toString();
+    const latitud = latitudStr && !isNaN(parseFloat(latitudStr)) ? parseFloat(latitudStr) : null;
+    const longitud = longitudStr && !isNaN(parseFloat(longitudStr)) ? parseFloat(longitudStr) : null;
 
     if (!id || !razonSocial || !sede || !direccion || !contacto || !whatsapp) {
       return { success: false, error: "Todos los campos son obligatorios" };
@@ -794,6 +806,8 @@ export async function actualizarCliente(formData: FormData) {
         contacto,
         whatsapp,
         activo,
+        latitud,
+        longitud,
       },
     });
 
@@ -1281,6 +1295,9 @@ export async function obtenerRutas() {
           codigoSerial: m.codigoSerial,
           clienteNombre: m.cliente?.razonSocial || "En Bodega",
           sede: m.cliente?.sede || "Bodega",
+          direccion: m.cliente?.direccion || "Calle 13 # 68-35",
+          latitud: m.cliente?.latitud ?? null,
+          longitud: m.cliente?.longitud ?? null,
           ubicacion: m.ubicacion,
         })),
       })),
@@ -1362,6 +1379,80 @@ export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
     return { success: false, error: error.message };
   }
 }
+
+export async function obtenerBodegaPrincipal() {
+  await requireAdmin();
+  try {
+    let bodega = await prisma.bodegaPrincipal.findUnique({
+      where: { id: "bodega-principal" },
+    });
+
+    if (!bodega) {
+      bodega = await prisma.bodegaPrincipal.create({
+        data: {
+          id: "bodega-principal",
+          nombre: "Bodega Central VendyTrack",
+          direccion: "Calle 13 # 68-35, Bogotá, Colombia",
+          latitud: 4.64828,
+          longitud: -74.11667,
+          telefono: "+573001234567",
+        },
+      });
+    }
+
+    return { success: true, data: bodega };
+  } catch (error: any) {
+    console.error("[obtenerBodegaPrincipal] Error:", error);
+    return {
+      success: true,
+      data: {
+        id: "bodega-principal",
+        nombre: "Bodega Central VendyTrack",
+        direccion: "Calle 13 # 68-35, Bogotá, Colombia",
+        latitud: 4.64828,
+        longitud: -74.11667,
+        telefono: "+573001234567",
+      },
+    };
+  }
+}
+
+export async function guardarBodegaPrincipal(formData: FormData) {
+  await requireAdmin();
+  try {
+    const nombre = formData.get("nombre")?.toString().trim() || "Bodega Central VendyTrack";
+    const direccion = formData.get("direccion")?.toString().trim() || "Bogotá, Colombia";
+    const latitud = parseFloat(formData.get("latitud")?.toString() || "4.64828");
+    const longitud = parseFloat(formData.get("longitud")?.toString() || "-74.11667");
+    const telefono = formData.get("telefono")?.toString().trim() || null;
+
+    const bodega = await prisma.bodegaPrincipal.upsert({
+      where: { id: "bodega-principal" },
+      update: {
+        nombre,
+        direccion,
+        latitud,
+        longitud,
+        telefono,
+      },
+      create: {
+        id: "bodega-principal",
+        nombre,
+        direccion,
+        latitud,
+        longitud,
+        telefono,
+      },
+    });
+
+    revalidatePath("/admin/rutas");
+    return { success: true, data: bodega };
+  } catch (error: any) {
+    console.error("[guardarBodegaPrincipal] Error:", error);
+    return { success: false, error: error.message || "Error al guardar bodega" };
+  }
+}
+
 
 // ==========================================
 // 6. DASHBOARD Y GESTIÓN DE RECAUDOS

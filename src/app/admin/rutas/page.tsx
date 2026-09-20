@@ -1,12 +1,13 @@
-import React from "react";
 import {
   obtenerRutas,
   obtenerRuteros,
   obtenerClientes,
+  obtenerBodegaPrincipal,
   crearRuta,
   asignarOperadorRuta,
   asignarMaquinaARuta,
 } from "@/actions/admin";
+import MapaRutasWrapper from "@/components/admin/MapaRutasWrapper";
 import {
   MapPin,
   PlusCircle,
@@ -19,15 +20,24 @@ import {
 } from "lucide-react";
 
 export default async function RutasPage() {
-  const [rutasRes, ruterosRes, clientesRes] = await Promise.all([
+  const [rutasRes, ruterosRes, clientesRes, bodegaRes] = await Promise.all([
     obtenerRutas(),
     obtenerRuteros(),
     obtenerClientes(),
+    obtenerBodegaPrincipal(),
   ]);
 
   const rutas = rutasRes.data || [];
   const ruteros = ruterosRes.data || [];
   const clientes = clientesRes.data || [];
+  const bodega = bodegaRes.data || {
+    id: "bodega-principal",
+    nombre: "Bodega Central VendyTrack",
+    direccion: "Calle 13 # 68-35, Bogotá, Colombia",
+    latitud: 4.64828,
+    longitud: -74.11667,
+    telefono: "+573001234567",
+  };
 
   // Todas las máquinas de todos los clientes para asignación
   const todasLasMaquinas = clientes.flatMap((c: any) =>
@@ -47,9 +57,12 @@ export default async function RutasPage() {
           Configuración de Rutas y Asignación de Ruteros
         </h2>
         <p className="text-xs text-stone-500">
-          Crea circuitos de visita, asigna máquinas vending a cada ruta y designa al rutero responsable
+          Crea circuitos de visita, visualiza los recorridos desde la bodega principal y asigna máquinas y ruteros
         </p>
       </div>
+
+      {/* Mapa de Rutas y Bodega */}
+      <MapaRutasWrapper bodega={bodega} rutas={rutas} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Formulario Crear Nueva Ruta */}
