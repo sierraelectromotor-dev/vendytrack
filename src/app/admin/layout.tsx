@@ -16,6 +16,8 @@ import {
   Users,
 } from "lucide-react";
 
+import { BotonReinicioSistema } from "@/components/admin/BotonReinicioSistema";
+
 export default async function AdminLayout({
   children,
 }: {
@@ -80,7 +82,7 @@ export default async function AdminLayout({
           </nav>
         </div>
 
-        {/* Pie de Sidebar con acceso a Vista Móvil y Cerrar Sesión */}
+        {/* Pie de Sidebar con acceso a Vista Móvil, Reinicio y Cerrar Sesión */}
         <div className="p-3 border-t border-stone-200 dark:border-stone-800 space-y-1.5">
           <Link
             href="/"
@@ -90,12 +92,14 @@ export default async function AdminLayout({
             <span>Vista Móvil (Rutero)</span>
           </Link>
 
+          <BotonReinicioSistema />
+
           <form action={logoutAction}>
             <button
               type="submit"
-              className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+              className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800/60 transition-colors"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-4 h-4 text-stone-400" />
               <span>Cerrar Sesión</span>
             </button>
           </form>
