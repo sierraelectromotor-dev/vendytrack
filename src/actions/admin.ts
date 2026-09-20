@@ -606,11 +606,14 @@ export async function obtenerClientes() {
           ubicacion: m.ubicacion,
           numeroProductos: m.numeroProductos,
           contadorActual: (m as any).contadorActual ?? 0,
+          clienteId: m.clienteId,
+          rutaId: m.rutaId,
           rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
           configuraciones: m.configuraciones.map((cfg) => ({
             id: cfg.id,
             bebida: cfg.bebida,
             activa: cfg.activa,
+            contadorInicial: (cfg as any).contadorInicial ?? 0,
             gramosCafe: Number(cfg.gramosCafe),
             gramosLeche: Number(cfg.gramosLeche),
             gramosCocoa: Number(cfg.gramosCocoa),
@@ -707,6 +710,7 @@ export async function crearMaquina(formData: FormData) {
     const rutaId = formData.get("rutaId")?.toString() || null;
     const numeroProductos = parseInt(formData.get("numeroProductos")?.toString() || "4", 10);
     const contadorActual = parseInt(formData.get("contadorActual")?.toString() || "0", 10);
+    const bebidasJson = formData.get("bebidasJson")?.toString();
 
     if (!codigoSerial || !modelo || !ubicacion || !clienteId) {
       return { success: false, error: "Datos de máquina incompletos" };
@@ -724,38 +728,208 @@ export async function crearMaquina(formData: FormData) {
       },
     });
 
-    // Calibración inicial automática de gramajes y activación de las primeras N bebidas
-    const defaultCalibrations = [
-      { bebida: "CAFE_LARGO_TINTO", cafe: 2.2, leche: 0, cocoa: 0, precio: 1800 },
-      { bebida: "CAFE_CORTO_EXPRESO", cafe: 2.0, leche: 0, cocoa: 0, precio: 1800 },
-      { bebida: "CAPUCHINO_TRADICIONAL", cafe: 2.0, leche: 12.0, cocoa: 0, precio: 2500 },
-      { bebida: "CHOCOLATE_CHOCOMILK", cafe: 0, leche: 6.0, cocoa: 16.0, precio: 2400 },
-      { bebida: "CAPUCHINO_VAINILLA", cafe: 1.8, leche: 12.0, cocoa: 0, precio: 2500 },
-      { bebida: "MOCACCINO", cafe: 1.8, leche: 8.0, cocoa: 10.0, precio: 2800 },
-      { bebida: "LATTE", cafe: 1.5, leche: 15.0, cocoa: 0, precio: 2600 },
-    ];
+    let configuracionesPersonalizadas: Array<{
+      bebida: string;
+      contadorInicial?: number;
+      precio?: number;
+      gramosCafe?: number;
+      gramosLeche?: number;
+      gramosCocoa?: number;
+    }> | null = null;
 
-    for (let i = 0; i < defaultCalibrations.length; i++) {
-      const c = defaultCalibrations[i];
-      const activa = i < numeroProductos;
-      await prisma.configBebidaMaquina.create({
-        data: {
-          maquinaId: nuevaMaquina.id,
-          bebida: c.bebida as TipoBebida,
-          activa,
-          gramosCafe: c.cafe,
-          gramosLeche: c.leche,
-          gramosCocoa: c.cocoa,
-          precio: c.precio,
-        },
-      });
+    if (bebidasJson) {
+      try {
+        configuracionesPersonalizadas = JSON.parse(bebidasJson);
+      } catch (e) {
+        console.error("Error parseando bebidasJson:", e);
+      }
+    }
+
+    if (configuracionesPersonalizadas && configuracionesPersonalizadas.length > 0) {
+      for (const c of configuracionesPersonalizadas) {
+        await prisma.configBebidaMaquina.create({
+          data: {
+            maquinaId: nuevaMaquina.id,
+            bebida: c.bebida as TipoBebida,
+            activa: true,
+            contadorInicial: c.contadorInicial ?? 0,
+            gramosCafe: c.gramosCafe ?? 0,
+            gramosLeche: c.gramosLeche ?? 0,
+            gramosCocoa: c.gramosCocoa ?? 0,
+            precio: c.precio ?? 2500,
+          } as any,
+        });
+      }
+    } else {
+      // Calibración por defecto si no se envió bebidasJson
+      const defaultCalibrations = [
+        { bebida: "CAFE_LARGO_TINTO", cafe: 2.2, leche: 0, cocoa: 0, precio: 1800 },
+        { bebida: "CAFE_CORTO_EXPRESO", cafe: 2.0, leche: 0, cocoa: 0, precio: 1800 },
+        { bebida: "CAPUCHINO_TRADICIONAL", cafe: 2.0, leche: 12.0, cocoa: 0, precio: 2500 },
+        { bebida: "CHOCOLATE_CHOCOMILK", cafe: 0, leche: 6.0, cocoa: 16.0, precio: 2400 },
+        { bebida: "CAPUCHINO_VAINILLA", cafe: 1.8, leche: 12.0, cocoa: 0, precio: 2500 },
+        { bebida: "MOCACCINO", cafe: 1.8, leche: 8.0, cocoa: 10.0, precio: 2800 },
+        { bebida: "LATTE", cafe: 1.5, leche: 15.0, cocoa: 0, precio: 2600 },
+      ];
+
+      for (let i = 0; i < defaultCalibrations.length; i++) {
+        const c = defaultCalibrations[i];
+        const activa = i < numeroProductos;
+        await prisma.configBebidaMaquina.create({
+          data: {
+            maquinaId: nuevaMaquina.id,
+            bebida: c.bebida as TipoBebida,
+            activa,
+            contadorInicial: 0,
+            gramosCafe: c.cafe,
+            gramosLeche: c.leche,
+            gramosCocoa: c.cocoa,
+            precio: c.precio,
+          } as any,
+        });
+      }
     }
 
     revalidatePath("/admin/clientes");
     return { success: true };
   } catch (error: any) {
     console.error("[crearMaquina] Error:", error);
-    return { success: false, error: "El serial ya existe o hubo un error" };
+    return { success: false, error: error.message || "El serial ya existe o hubo un error" };
+  }
+}
+
+export async function actualizarMaquina(data: {
+  id: string;
+  codigoSerial: string;
+  modelo: string;
+  ubicacion: string;
+  clienteId: string;
+  rutaId?: string | null;
+  numeroProductos: number;
+  bebidas?: Array<{
+    bebida: string;
+    activa: boolean;
+    contadorInicial?: number;
+    precio: number;
+    gramosCafe: number;
+    gramosLeche: number;
+    gramosCocoa: number;
+  }>;
+}) {
+  await requireAdmin();
+
+  try {
+    const { id, codigoSerial, modelo, ubicacion, clienteId, rutaId, numeroProductos, bebidas } = data;
+
+    if (!id || !codigoSerial || !modelo || !ubicacion || !clienteId) {
+      return { success: false, error: "Datos incompletos de la máquina" };
+    }
+
+    await prisma.maquina.update({
+      where: { id },
+      data: {
+        codigoSerial,
+        modelo,
+        ubicacion,
+        clienteId,
+        rutaId: rutaId && rutaId !== "none" ? rutaId : null,
+        numeroProductos,
+      },
+    });
+
+    if (bebidas && bebidas.length > 0) {
+      for (const b of bebidas) {
+        await prisma.configBebidaMaquina.upsert({
+          where: {
+            maquinaId_bebida: {
+              maquinaId: id,
+              bebida: b.bebida as TipoBebida,
+            },
+          },
+          update: {
+            activa: b.activa,
+            contadorInicial: b.contadorInicial ?? 0,
+            precio: b.precio,
+            gramosCafe: b.gramosCafe,
+            gramosLeche: b.gramosLeche,
+            gramosCocoa: b.gramosCocoa,
+          } as any,
+          create: {
+            maquinaId: id,
+            bebida: b.bebida as TipoBebida,
+            activa: b.activa,
+            contadorInicial: b.contadorInicial ?? 0,
+            precio: b.precio,
+            gramosCafe: b.gramosCafe,
+            gramosLeche: b.gramosLeche,
+            gramosCocoa: b.gramosCocoa,
+          } as any,
+        });
+      }
+    }
+
+    revalidatePath("/admin/clientes");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[actualizarMaquina] Error:", error);
+    return { success: false, error: error.message || "Error al actualizar la máquina" };
+  }
+}
+
+export async function eliminarMaquina(maquinaId: string, accion: "eliminar" | "desasignar") {
+  await requireAdmin();
+
+  try {
+    if (!maquinaId) {
+      return { success: false, error: "ID de máquina no especificado" };
+    }
+
+    if (accion === "desasignar") {
+      // Inactivar la máquina para retirarla del circuito y de las rutas del cliente
+      await prisma.maquina.update({
+        where: { id: maquinaId },
+        data: { activa: false },
+      });
+      revalidatePath("/admin/clientes");
+      return { success: true, message: "Máquina desasignada e inactivada con éxito" };
+    }
+
+    // Acción eliminar permanentemente
+    await prisma.$transaction(async (tx) => {
+      const liquidaciones = await tx.liquidacion.findMany({
+        where: { maquinaId },
+        select: { id: true },
+      });
+
+      if (liquidaciones.length > 0) {
+        const liqIds = liquidaciones.map((l) => l.id);
+        await tx.movimientoInventario.deleteMany({
+          where: { liquidacionId: { in: liqIds } },
+        });
+        await tx.detalleLiquidacion.deleteMany({
+          where: { liquidacionId: { in: liqIds } },
+        });
+        await tx.liquidacion.deleteMany({
+          where: { maquinaId },
+        });
+      }
+
+      await tx.configBebidaMaquina.deleteMany({
+        where: { maquinaId },
+      });
+      await tx.precioMaquina.deleteMany({
+        where: { maquinaId },
+      });
+      await tx.maquina.delete({
+        where: { id: maquinaId },
+      });
+    });
+
+    revalidatePath("/admin/clientes");
+    return { success: true, message: "Máquina eliminada permanentemente" };
+  } catch (error: any) {
+    console.error("[eliminarMaquina] Error:", error);
+    return { success: false, error: error.message || "Error al eliminar la máquina" };
   }
 }
 

@@ -83,7 +83,7 @@ export async function obtenerDatosMaquina(maquinaId: string) {
             bebida: c.bebida,
             nombre: catalogo?.nombre || c.bebida,
             icono: catalogo?.icono || "☕",
-            contadorAnterior: mapaUltimosContadores[c.bebida] ?? (maquina as any).contadorActual ?? 0,
+            contadorAnterior: mapaUltimosContadores[c.bebida] ?? (c as any).contadorInicial ?? (maquina as any).contadorActual ?? 0,
             precioUnitario: Number(c.precio) || mapaPrecios[c.bebida] || preciosPorDefecto[c.bebida as TipoBebidaEnum],
           };
         });

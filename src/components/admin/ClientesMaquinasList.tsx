@@ -11,12 +11,18 @@ import {
   Layers,
   Sparkles,
   Pencil,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import {
   CalibracionMaquinaModal,
   BebidaConfigItem,
 } from "./CalibracionMaquinaModal";
 import { EditarClienteModal } from "./EditarClienteModal";
+import { EditarMaquinaModal } from "./EditarMaquinaModal";
+import { eliminarMaquina } from "@/actions/admin";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
 export interface MaquinaItem {
@@ -26,6 +32,8 @@ export interface MaquinaItem {
   ubicacion: string;
   numeroProductos: number;
   contadorActual: number;
+  clienteId: string;
+  rutaId?: string | null;
   rutaNombre: string;
   configuraciones: BebidaConfigItem[];
 }
@@ -43,13 +51,44 @@ export interface ClienteItem {
 
 interface ClientesMaquinasListProps {
   clientes: ClienteItem[];
+  rutas?: Array<{ id: string; nombre: string }>;
 }
 
 export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
   clientes,
+  rutas = [],
 }) => {
   const [selectedMaquina, setSelectedMaquina] = useState<MaquinaItem | null>(null);
   const [selectedClienteParaEditar, setSelectedClienteParaEditar] = useState<ClienteItem | null>(null);
+  const [selectedMaquinaParaEditar, setSelectedMaquinaParaEditar] = useState<MaquinaItem | null>(null);
+  const [maquinaAEliminar, setMaquinaAEliminar] = useState<MaquinaItem | null>(null);
+  const [isDeletingMaquina, setIsDeletingMaquina] = useState(false);
+  const [mensaje, setMensaje] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
+
+  const handleEliminarMaquina = async (accion: "eliminar" | "desasignar") => {
+    if (!maquinaAEliminar) return;
+    setIsDeletingMaquina(true);
+    setMensaje(null);
+
+    const res = await eliminarMaquina(maquinaAEliminar.id, accion);
+    setIsDeletingMaquina(false);
+
+    if (res.success) {
+      setMensaje({
+        tipo: "success",
+        texto:
+          accion === "desasignar"
+            ? `Máquina ${maquinaAEliminar.codigoSerial} desasignada e inactivada.`
+            : `Máquina ${maquinaAEliminar.codigoSerial} eliminada permanentemente.`,
+      });
+      setMaquinaAEliminar(null);
+    } else {
+      setMensaje({
+        tipo: "error",
+        texto: res.error || "Error al procesar la máquina.",
+      });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -59,9 +98,35 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
           Clientes Registrados y Parque de Máquinas ({clientes.length})
         </h3>
         <span className="text-xs text-stone-400">
-          Configura gramajes para el descuento automático en Kárdex
+          Configura contadores iniciales, precios y gramajes
         </span>
       </div>
+
+      {mensaje && (
+        <div
+          className={`p-3 rounded-xl flex items-center justify-between text-xs ${
+            mensaje.tipo === "success"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+              : "bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {mensaje.tipo === "success" ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            )}
+            <span>{mensaje.texto}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMensaje(null)}
+            className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {clientes.map((c) => (
@@ -149,12 +214,6 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                               <span className="text-[10px] font-semibold text-coffee-800 dark:text-amber-300 bg-coffee-100/70 dark:bg-stone-800 px-2 py-0.5 rounded-md border border-coffee-200 dark:border-stone-700">
                                 {m.numeroProductos} Selecciones
                               </span>
-                              <span
-                                className="text-[10px] font-mono font-semibold text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-900 px-2 py-0.5 rounded-md border border-stone-200 dark:border-stone-700"
-                                title="Contador actual / inicial de la máquina"
-                              >
-                                🔢 C.A: {m.contadorActual ? m.contadorActual.toLocaleString("es-CO") : 0}
-                              </span>
                             </div>
                             <span className="text-[11px] text-stone-500 block mt-0.5">
                               {m.modelo} • {m.ubicacion}
@@ -164,19 +223,31 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                             </span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => setSelectedMaquina(m)}
-                            className="px-2.5 py-1.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-600 hover:border-coffee-600 dark:hover:border-amber-400 hover:text-coffee-800 dark:hover:text-amber-300 text-stone-700 dark:text-stone-300 text-[11px] font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 shrink-0"
-                            title="Configurar Bebidas, Precios y Gramajes de Descuento de Kárdex"
-                          >
-                            <Sliders className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
-                            <span>Calibrar Gramajes</span>
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Botón Editar Máquina */}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMaquinaParaEditar(m)}
+                              className="p-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-coffee-500 dark:hover:border-amber-400 text-stone-700 dark:text-stone-300 rounded-lg shadow-xs transition-colors"
+                              title="Editar máquina, reasignar cliente o ajustar contadores/bebidas"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
+                            </button>
+
+                            {/* Botón Borrar / Desasignar */}
+                            <button
+                              type="button"
+                              onClick={() => setMaquinaAEliminar(m)}
+                              className="p-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-rose-400 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg shadow-xs transition-colors"
+                              title="Desasignar o eliminar máquina"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Píldoras de Bebidas Activas */}
-                        <div className="flex flex-wrap gap-1 pt-1">
+                        {/* Píldoras de Bebidas Activas con su Contador Inicial */}
+                        <div className="flex flex-wrap gap-1.5 pt-1">
                           {activeConfigs.length > 0 ? (
                             activeConfigs.map((cfg) => {
                               const bInfo = BEBIDAS_CATALOGO.find(
@@ -185,12 +256,18 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                               return (
                                 <span
                                   key={cfg.bebida}
-                                  className="inline-flex items-center gap-1 text-[10px] bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 px-2 py-0.5 rounded-md border border-stone-200 dark:border-stone-700"
+                                  className="inline-flex items-center gap-1 text-[10px] bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 px-2 py-0.5 rounded-md border border-stone-200 dark:border-stone-700 shadow-2xs"
                                 >
                                   <span>{bInfo?.icono || "☕"}</span>
-                                  <span>{bInfo?.nombre || cfg.bebida}</span>
+                                  <span className="font-medium">{bInfo?.nombre || cfg.bebida}</span>
                                   <span className="text-[9px] text-stone-400 font-mono">
                                     (${cfg.precio.toLocaleString("es-CO")})
+                                  </span>
+                                  <span
+                                    className="text-[9px] font-mono font-bold text-coffee-700 dark:text-amber-400 bg-coffee-50 dark:bg-stone-800 px-1 rounded"
+                                    title="Contador Inicial configurado para esta bebida"
+                                  >
+                                    C.I: {cfg.contadorInicial?.toLocaleString("es-CO") ?? 0}
                                   </span>
                                 </span>
                               );
@@ -198,7 +275,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                           ) : (
                             <span className="text-[10px] text-amber-600 dark:text-amber-400 italic flex items-center gap-1">
                               <Sparkles className="w-3 h-3" />
-                              Sin bebidas calibradas. Haz clic en "Calibrar Gramajes".
+                              Sin bebidas calibradas. Haz clic en el lápiz para configurar.
                             </span>
                           )}
                         </div>
@@ -234,6 +311,90 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
           cliente={selectedClienteParaEditar}
           onClose={() => setSelectedClienteParaEditar(null)}
         />
+      )}
+
+      {/* Modal de Edición de Máquina */}
+      {selectedMaquinaParaEditar && (
+        <EditarMaquinaModal
+          maquina={{
+            id: selectedMaquinaParaEditar.id,
+            codigoSerial: selectedMaquinaParaEditar.codigoSerial,
+            modelo: selectedMaquinaParaEditar.modelo,
+            ubicacion: selectedMaquinaParaEditar.ubicacion,
+            numeroProductos: selectedMaquinaParaEditar.numeroProductos,
+            clienteId: selectedMaquinaParaEditar.clienteId,
+            rutaId: selectedMaquinaParaEditar.rutaId,
+            configuraciones: selectedMaquinaParaEditar.configuraciones.map((c) => ({
+              ...c,
+              contadorInicial: c.contadorInicial ?? 0,
+            })),
+          }}
+          clientes={clientes.map((c) => ({
+            id: c.id,
+            razonSocial: c.razonSocial,
+            sede: c.sede,
+          }))}
+          rutas={rutas}
+          onClose={() => setSelectedMaquinaParaEditar(null)}
+          onSuccess={() => {
+            setMensaje({
+              tipo: "success",
+              texto: "Máquina y contadores actualizados correctamente.",
+            });
+          }}
+        />
+      )}
+
+      {/* Modal de Confirmación para Desasignar o Eliminar Máquina */}
+      {maquinaAEliminar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-base text-stone-900 dark:text-white">
+                ¿Desasignar o Eliminar Máquina?
+              </h3>
+              <p className="text-xs text-stone-500">
+                Máquina <strong className="text-stone-800 dark:text-stone-200">{maquinaAEliminar.codigoSerial}</strong> ({maquinaAEliminar.modelo}).
+                Puedes retirarla del cliente o eliminarla completamente.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => handleEliminarMaquina("desasignar")}
+                disabled={isDeletingMaquina}
+                className="w-full py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingMaquina && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Desasignar e Inactivar Máquina</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleEliminarMaquina("eliminar")}
+                disabled={isDeletingMaquina}
+                className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingMaquina && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Eliminar Máquina Permanentemente</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMaquinaAEliminar(null)}
+                disabled={isDeletingMaquina}
+                className="w-full py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

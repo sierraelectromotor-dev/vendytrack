@@ -119,17 +119,18 @@ model Maquina {
 }
 
 model ConfigBebidaMaquina {
-  id           String      @id @default(cuid())
-  maquinaId    String
-  maquina      Maquina     @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
-  bebida       TipoBebida
-  activa       Boolean     @default(true)
-  gramosCafe   Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de café soluble por taza
-  gramosLeche  Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de leche en polvo por taza
-  gramosCocoa  Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de cocoa por taza
-  precio       Decimal     @default(2500) @db.Decimal(10, 2)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  maquinaId       String
+  maquina         Maquina     @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+  bebida          TipoBebida
+  activa          Boolean     @default(true)
+  contadorInicial Int         @default(0) // Contador inicial de esta bebida en la máquina
+  gramosCafe      Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de café soluble por taza
+  gramosLeche     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de leche en polvo por taza
+  gramosCocoa     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de cocoa por taza
+  precio          Decimal     @default(2500) @db.Decimal(10, 2)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@unique([maquinaId, bebida])
   @@index([maquinaId])

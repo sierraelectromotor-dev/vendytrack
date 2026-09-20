@@ -18,6 +18,7 @@ import {
 export interface BebidaConfigItem {
   bebida: string;
   activa: boolean;
+  contadorInicial?: number;
   gramosCafe: number;
   gramosLeche: number;
   gramosCocoa: number;

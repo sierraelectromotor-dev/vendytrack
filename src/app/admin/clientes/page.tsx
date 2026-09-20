@@ -1,16 +1,11 @@
 import React from "react";
-import { obtenerClientes, crearCliente, crearMaquina, obtenerRutas } from "@/actions/admin";
+import { obtenerClientes, crearCliente, obtenerRutas } from "@/actions/admin";
 import {
   Building2,
   PlusCircle,
-  Coffee,
-  Phone,
-  MapPin,
-  Tag,
-  Sliders,
-  CheckCircle2,
 } from "lucide-react";
 import { ClientesMaquinasList } from "@/components/admin/ClientesMaquinasList";
+import { CrearMaquinaForm } from "@/components/admin/CrearMaquinaForm";
 
 export default async function ClientesPage() {
   const [clientesRes, rutasRes] = await Promise.all([
@@ -34,8 +29,8 @@ export default async function ClientesPage() {
         </p>
       </div>
 
-      {/* Formularios de Creación: 1. Cliente, 2. Máquina */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Formularios de Creación: 1. Cliente, 2. Máquina con contadores y calibración */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* Formulario Crear Cliente */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-3 text-xs">
           <h3 className="font-bold text-stone-900 dark:text-white flex items-center gap-2">
@@ -128,142 +123,12 @@ export default async function ClientesPage() {
           </form>
         </div>
 
-        {/* Formulario Crear Máquina */}
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-3 text-xs">
-          <h3 className="font-bold text-stone-900 dark:text-white flex items-center gap-2">
-            <Coffee className="w-4 h-4 text-coffee-600" />
-            Asociar Máquina a Cliente
-          </h3>
-
-          <form
-            action={async (formData: FormData) => {
-              "use server";
-              await crearMaquina(formData);
-            }}
-            className="space-y-2.5"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Cliente *
-                </label>
-                <select
-                  name="clienteId"
-                  required
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
-                >
-                  {clientes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.razonSocial} ({c.sede})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Código Serial / Placa *
-                </label>
-                <input
-                  type="text"
-                  name="codigoSerial"
-                  required
-                  placeholder="ej. MAQ-2024-099"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Modelo *
-                </label>
-                <input
-                  type="text"
-                  name="modelo"
-                  required
-                  placeholder="ej. Bianchi Soluble 4 Tolvas"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Ubicación en el Local *
-                </label>
-                <input
-                  type="text"
-                  name="ubicacion"
-                  required
-                  placeholder="ej. Piso 3 Cafetería Médicos"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  N° Selecciones *
-                </label>
-                <select
-                  name="numeroProductos"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600 font-bold"
-                >
-                  <option value="3">3 Bebidas</option>
-                  <option value="4">4 Bebidas</option>
-                  <option value="6">6 Bebidas</option>
-                  <option value="7">7 Bebidas</option>
-                  <option value="8">8 Bebidas</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1" title="Contador inicial de la máquina">
-                  Contador Actual *
-                </label>
-                <input
-                  type="number"
-                  name="contadorActual"
-                  required
-                  defaultValue="0"
-                  min="0"
-                  placeholder="ej. 1450"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600 font-mono font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Ruta Asignada
-                </label>
-                <select
-                  name="rutaId"
-                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
-                >
-                  <option value="none">Sin Ruta</option>
-                  {rutas.map((r: any) => (
-                    <option key={r.id} value={r.id}>
-                      {r.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-all"
-            >
-              Asociar Máquina
-            </button>
-          </form>
-        </div>
+        {/* Formulario Crear Máquina Interactivo con Contadores por Bebida */}
+        <CrearMaquinaForm clientes={clientes} rutas={rutas} />
       </div>
 
-      {/* Listado Interactivo de Clientes con sus Máquinas y Calibrador */}
-      <ClientesMaquinasList clientes={clientes} />
+      {/* Listado Interactivo de Clientes con sus Máquinas, Edición y Borrado */}
+      <ClientesMaquinasList clientes={clientes} rutas={rutas} />
     </div>
   );
 }
