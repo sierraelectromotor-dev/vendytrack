@@ -120,7 +120,7 @@ export default function ContabilidadView({
   return (
     <div className="space-y-6 text-xs">
       {/* Cabecera y Filtro de Período */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 no-scrollbar">
         <div>
           <h2 className="text-lg sm:text-xl font-bold text-stone-900 dark:text-white flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -132,7 +132,7 @@ export default function ContabilidadView({
         </div>
 
         {/* Selector de Período y Botones de Acción (Adaptables de tamaño) */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap no-scrollbar overflow-visible">
           {/* Selector Mes / Año */}
           <div className="flex items-center gap-1 sm:gap-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl px-2 sm:px-2.5 py-1.5 shadow-xs shrink-0">
             <Calendar className="w-3.5 h-3.5 text-stone-400 shrink-0" />
