@@ -6,6 +6,9 @@ import { LiquidacionReceiptPdf } from "@/components/pdf/LiquidacionReceiptPdf";
 import { formatFechaColombia } from "@/lib/utils";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }

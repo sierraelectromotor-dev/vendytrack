@@ -10,6 +10,7 @@ const nextConfig = {
     ],
   },
   experimental: {
+    serverComponentsExternalPackages: ["@react-pdf/renderer"],
     serverActions: {
       bodySizeLimit: "10mb", // Para permitir subida de fotos de contadores y firmas de alta resolución
     },
