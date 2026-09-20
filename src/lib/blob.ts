@@ -67,19 +67,24 @@ export async function uploadSignature(
 export async function uploadPdfReceipt(
   pdfBuffer: Buffer,
   consecutivo: string | number
-): Promise<string> {
+): Promise<string | null> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
   if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Usando fallback de desarrollo.");
-    return `https://demo.public.blob.vercel-storage.com/recibos/recibo-${consecutivo}.pdf`;
+    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado.");
+    return null;
   }
 
-  const blob = await put(`recibos/recibo-${consecutivo}.pdf`, pdfBuffer, {
-    access: "public",
-    contentType: "application/pdf",
-    addRandomSuffix: false,
-  });
+  try {
+    const blob = await put(`recibos/recibo-${consecutivo}.pdf`, pdfBuffer, {
+      access: "public",
+      contentType: "application/pdf",
+      addRandomSuffix: false,
+    });
 
-  return blob.url;
+    return blob.url;
+  } catch (error) {
+    console.error("[Vercel Blob] Error subiendo PDF:", error);
+    return null;
+  }
 }

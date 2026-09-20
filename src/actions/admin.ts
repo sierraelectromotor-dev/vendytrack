@@ -53,6 +53,7 @@ export async function obtenerInventarioBodega() {
         movimientos: movimientos.map((m) => ({
           id: m.id,
           insumoNombre: m.insumo.nombre,
+          unidadMedida: m.insumo.unidadMedida,
           tipo: m.tipo,
           cantidad: Number(m.cantidad),
           costoUnitario: m.costoUnitario ? Number(m.costoUnitario) : null,
@@ -138,6 +139,7 @@ export async function crearInsumo(formData: FormData) {
     const stockInicial = parseFloat(formData.get("stockInicial")?.toString() || "0");
     const stockMinimo = parseFloat(formData.get("stockMinimo")?.toString() || "0");
     const costoPromedio = parseFloat(formData.get("costoPromedio")?.toString() || "0");
+    const facturaCompra = formData.get("facturaCompra")?.toString().trim();
 
     if (!nombre) {
       return { success: false, error: "El nombre del insumo es obligatorio" };
@@ -175,7 +177,9 @@ export async function crearInsumo(formData: FormData) {
             tipo: "ENTRADA_COMPRA",
             cantidad: stockInicial,
             costoUnitario: costoPromedio > 0 ? costoPromedio : null,
-            referencia: "Saldo Inicial de Bodega",
+            referencia: facturaCompra
+              ? `Factura Compra #${facturaCompra}`
+              : "Saldo Inicial de Bodega",
           },
         });
       }

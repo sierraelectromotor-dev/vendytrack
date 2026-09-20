@@ -24,17 +24,37 @@ import {
   CreditCard,
   ChevronRight,
   Sparkles,
+  MapPin,
+  Truck,
+  Check,
   Loader2,
-  Image as ImageIcon,
+  ArrowRight,
 } from "lucide-react";
+
+export interface MaquinaRutaItem {
+  id: string;
+  codigoSerial: string;
+  modelo: string;
+  ubicacion: string;
+  clienteNombre: string;
+  rutaNombre: string;
+  liquidadaHoy: boolean;
+  ultimaLiquidacionFecha: string | null;
+  ultimoTotalFacturado: number | null;
+  ultimoConsecutivo: number | null;
+}
 
 interface MobileLiquidacionFormProps {
   initialMaquinaId?: string;
+  maquinasRuta?: MaquinaRutaItem[];
 }
 
 export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
   initialMaquinaId = "maq-demo-01",
+  maquinasRuta = [],
 }) => {
+  const [currentMaquinaId, setCurrentMaquinaId] = useState<string>(initialMaquinaId);
+  const [rutaMaquinas, setRutaMaquinas] = useState<MaquinaRutaItem[]>(maquinasRuta);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{
@@ -85,16 +105,10 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
   } = useForm<LiquidacionFormData>({
     resolver: zodResolver(liquidacionFormSchema),
     defaultValues: {
-      clienteId: "cli-demo-01",
+      clienteId: "",
       maquinaId: initialMaquinaId,
       metodoPago: "EFECTIVO",
-      detalles: BEBIDAS_CATALOGO.map((b) => ({
-        bebida: b.id,
-        contadorAnterior: 0,
-        contadorActual: 0,
-        bebidasDanadas: 0,
-        precioUnitario: 2500,
-      })),
+      detalles: [],
       fotoContadorBase64: "",
       firmaClienteBase64: "",
       notas: "",
@@ -106,11 +120,22 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     name: "detalles",
   });
 
-  // Cargar contadores anteriores y precios al montar el componente
+  useEffect(() => {
+    if (initialMaquinaId) setCurrentMaquinaId(initialMaquinaId);
+  }, [initialMaquinaId]);
+
+  useEffect(() => {
+    if (maquinasRuta && maquinasRuta.length > 0) {
+      setRutaMaquinas(maquinasRuta);
+    }
+  }, [maquinasRuta]);
+
+  // Cargar contadores anteriores y precios al montar el componente o cambiar de máquina
   useEffect(() => {
     async function loadData() {
+      if (!currentMaquinaId) return;
       setLoadingInitial(true);
-      const res = await obtenerDatosMaquina(initialMaquinaId);
+      const res = await obtenerDatosMaquina(currentMaquinaId);
       if (res.success && res.data) {
         setClienteInfo(res.data.cliente);
         setMaquinaInfo({
@@ -140,7 +165,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
       setLoadingInitial(false);
     }
     loadData();
-  }, [initialMaquinaId, reset]);
+  }, [currentMaquinaId, reset]);
 
   // Observar valores en tiempo real para cálculos reactivos
   const watchedDetalles = watch("detalles");
@@ -216,6 +241,13 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
 
     setIsSubmitting(false);
     if (result.success && result.data) {
+      // Actualizar estado local para marcar la máquina actual como liquidada hoy
+      setRutaMaquinas((prev) =>
+        prev.map((m) =>
+          m.id === currentMaquinaId ? { ...m, liquidadaHoy: true } : m
+        )
+      );
+
       setSubmitResult({
         success: true,
         consecutivo: result.data.consecutivo,
@@ -248,6 +280,11 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     const consecutivoStr = typeof submitResult.consecutivo === "number"
       ? `LIQ-${submitResult.consecutivo.toString().padStart(4, "0")}`
       : submitResult.consecutivo;
+
+    // Buscar la siguiente máquina pendiente en la ruta
+    const siguienteMaquina = rutaMaquinas.find(
+      (m) => m.id !== currentMaquinaId && !m.liquidadaHoy
+    );
 
     return (
       <div className="w-full max-w-lg mx-auto p-4 space-y-6 animate-in fade-in zoom-in-95 duration-200">
@@ -309,6 +346,33 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
               </a>
             )}
 
+            {/* Continuar con siguiente máquina de la ruta */}
+            {siguienteMaquina ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentMaquinaId(siguienteMaquina.id);
+                  setSubmitResult(null);
+                  reset();
+                  setCounterPhotoPreview(null);
+                  setSignatureDataUrl("");
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98] border border-coffee-700"
+              >
+                <span>Siguiente Máquina: {siguienteMaquina.codigoSerial}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : rutaMaquinas.length > 0 ? (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl text-center">
+                <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                  🎉 ¡Ruta del Día Completada!
+                </span>
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  Todas las {rutaMaquinas.length} máquinas de la ruta han sido liquidadas hoy.
+                </p>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={() => {
@@ -327,11 +391,92 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     );
   }
 
+  const maquinaActualEnRuta = rutaMaquinas.find((m) => m.id === currentMaquinaId);
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
       className="w-full max-w-lg mx-auto pb-28 space-y-5 px-3 sm:px-4"
     >
+      {/* Barra de Progreso y Hoja de Ruta del Rutero */}
+      {rutaMaquinas.length > 0 && (
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-3.5 shadow-sm space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-stone-800 dark:text-stone-200">
+              <Truck className="w-4 h-4 text-coffee-600" />
+              <span>Hoja de Ruta de Hoy</span>
+            </div>
+            <span className="font-semibold text-stone-500">
+              {rutaMaquinas.filter((m) => m.liquidadaHoy).length} de {rutaMaquinas.length} listas
+            </span>
+          </div>
+
+          <div className="w-full bg-stone-100 dark:bg-stone-800 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+              style={{
+                width: `${
+                  rutaMaquinas.length > 0
+                    ? Math.round(
+                        (rutaMaquinas.filter((m) => m.liquidadaHoy).length /
+                          rutaMaquinas.length) *
+                          100
+                      )
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar text-xs">
+            {rutaMaquinas.map((m) => {
+              const isCurrent = m.id === currentMaquinaId;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    if (!isCurrent) {
+                      setCurrentMaquinaId(m.id);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all border font-medium ${
+                    isCurrent
+                      ? "bg-coffee-800 text-white border-coffee-800 shadow-sm"
+                      : m.liquidadaHoy
+                      ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50"
+                      : "bg-stone-50 dark:bg-stone-800/60 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100"
+                  }`}
+                >
+                  {m.liquidadaHoy ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+                  )}
+                  <span>{m.codigoSerial}</span>
+                  <span className="text-[10px] opacity-75 max-w-[90px] truncate">
+                    ({m.clienteNombre})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Aviso si la máquina actual ya fue liquidada hoy */}
+      {maquinaActualEnRuta?.liquidadaHoy && (
+        <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>Esta máquina ya fue liquidada hoy.</span>
+          </div>
+          <span className="text-[10px] font-semibold uppercase bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+            Completada
+          </span>
+        </div>
+      )}
+
       {/* Encabezado Mobile de la Visita */}
       <div className="bg-gradient-to-br from-coffee-800 to-coffee-950 text-white rounded-2xl p-4 shadow-mobile space-y-3 border border-coffee-700/40">
         <div className="flex items-center justify-between">

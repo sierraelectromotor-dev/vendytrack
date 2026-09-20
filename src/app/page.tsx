@@ -25,13 +25,83 @@ export default async function HomePage() {
 
   const isAdmin = user?.rol === "ADMIN";
 
-  // Buscar la primera máquina configurada en la base de datos
-  const primeraMaquina = await prisma.maquina
-    .findFirst({
-      include: { cliente: true },
-      orderBy: { createdAt: "asc" },
-    })
-    .catch(() => null);
+  // Buscar rutas asignadas al operador
+  let rutaIds: string[] = [];
+  if (user?.id) {
+    const rutasAsignadas = await prisma.ruta
+      .findMany({
+        where: { operadorId: user.id, activa: true },
+        select: { id: true },
+      })
+      .catch(() => []);
+    rutaIds = rutasAsignadas.map((r) => r.id);
+  }
+
+  // Buscar máquinas activas con cliente asignado
+  let maquinas: any[] = [];
+  if (rutaIds.length > 0) {
+    maquinas = await prisma.maquina
+      .findMany({
+        where: {
+          activa: true,
+          clienteId: { not: null },
+          rutaId: { in: rutaIds },
+        },
+        include: {
+          cliente: true,
+          ruta: true,
+          liquidaciones: {
+            orderBy: { fecha: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: { codigoSerial: "asc" },
+      })
+      .catch(() => []);
+  }
+
+  // Si no tiene ruta asignada o es Admin, consultar todas las máquinas activas
+  if (maquinas.length === 0) {
+    maquinas = await prisma.maquina
+      .findMany({
+        where: {
+          activa: true,
+          clienteId: { not: null },
+        },
+        include: {
+          cliente: true,
+          ruta: true,
+          liquidaciones: {
+            orderBy: { fecha: "desc" },
+            take: 1,
+          },
+        },
+        orderBy: { codigoSerial: "asc" },
+      })
+      .catch(() => []);
+  }
+
+  const ahora = new Date();
+  const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+
+  const maquinasRuta = maquinas.map((m) => {
+    const ultimaLiq = m.liquidaciones[0];
+    const liquidadaHoy = ultimaLiq ? new Date(ultimaLiq.fecha) >= inicioHoy : false;
+    return {
+      id: m.id,
+      codigoSerial: m.codigoSerial,
+      modelo: m.modelo,
+      ubicacion: m.ubicacion,
+      clienteNombre: m.cliente ? `${m.cliente.razonSocial} (${m.cliente.sede})` : "Sin Cliente",
+      rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
+      liquidadaHoy,
+      ultimaLiquidacionFecha: ultimaLiq ? ultimaLiq.fecha.toISOString() : null,
+      ultimoTotalFacturado: ultimaLiq ? Number(ultimaLiq.totalFacturado) : null,
+      ultimoConsecutivo: ultimaLiq ? ultimaLiq.consecutivo : null,
+    };
+  });
+
+  const primeraMaquina = maquinas[0] || null;
 
   return (
     <div className="min-h-screen bg-stone-100 dark:bg-stone-950 py-3 sm:py-6">
@@ -138,7 +208,10 @@ export default async function HomePage() {
         </div>
       ) : (
         /* Formulario Mobile de Liquidación en Campo con máquina real */
-        <MobileLiquidacionForm initialMaquinaId={primeraMaquina.id} />
+        <MobileLiquidacionForm
+          initialMaquinaId={primeraMaquina.id}
+          maquinasRuta={maquinasRuta}
+        />
       )}
     </div>
   );

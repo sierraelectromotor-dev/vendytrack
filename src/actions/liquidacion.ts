@@ -80,22 +80,32 @@ export async function obtenerDatosMaquina(maquinaId: string) {
     };
 
     // Si la máquina tiene configuraciones personalizadas de bebidas activas, usar solo esas
+    const maxBebidas = maquina.numeroProductos || 4;
     let bebidasConContadores;
-    if (maquina.configuraciones && maquina.configuraciones.length > 0) {
-      bebidasConContadores = maquina.configuraciones
-        .filter((c) => c.activa)
+    const configsActivas = (maquina.configuraciones || []).filter((c) => c.activa);
+
+    if (configsActivas.length > 0) {
+      bebidasConContadores = configsActivas
+        .slice(0, maxBebidas)
         .map((c) => {
           const catalogo = BEBIDAS_CATALOGO.find((b) => b.id === c.bebida);
           return {
             bebida: c.bebida,
             nombre: catalogo?.nombre || c.bebida,
             icono: catalogo?.icono || "☕",
-            contadorAnterior: mapaUltimosContadores[c.bebida] ?? (c as any).contadorInicial ?? (maquina as any).contadorActual ?? 0,
-            precioUnitario: Number(c.precio) || mapaPrecios[c.bebida] || preciosPorDefecto[c.bebida as TipoBebidaEnum],
+            contadorAnterior:
+              mapaUltimosContadores[c.bebida] ??
+              (c as any).contadorInicial ??
+              (maquina as any).contadorActual ??
+              0,
+            precioUnitario:
+              Number(c.precio) ||
+              mapaPrecios[c.bebida] ||
+              preciosPorDefecto[c.bebida as TipoBebidaEnum],
           };
         });
     } else {
-      bebidasConContadores = BEBIDAS_CATALOGO.map((b) => ({
+      bebidasConContadores = BEBIDAS_CATALOGO.slice(0, maxBebidas).map((b) => ({
         bebida: b.id,
         nombre: b.nombre,
         icono: b.icono,
@@ -440,21 +450,28 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       notas: validatedData.notas,
     };
 
-    let reciboPdfUrl = "";
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
+    let reciboPdfUrl = `${baseUrl}/api/liquidaciones/${liquidacionId}/pdf`;
+
     try {
       const pdfElement = React.createElement(LiquidacionReceiptPdf, { data: pdfData }) as any;
       const pdfBuffer = await renderToBuffer(pdfElement);
-      reciboPdfUrl = await uploadPdfReceipt(pdfBuffer, consecutivoGenerado);
-
-      // Actualizar Liquidación con la URL del PDF generado
-      await prisma.liquidacion.update({
-        where: { id: liquidacionId },
-        data: { reciboPdfUrl },
-      }).catch(() => null);
+      const uploadedUrl = await uploadPdfReceipt(pdfBuffer, consecutivoGenerado);
+      if (uploadedUrl && !uploadedUrl.includes("demo.public.blob")) {
+        reciboPdfUrl = uploadedUrl;
+      }
     } catch (pdfError) {
-      console.error("[registrarLiquidacion] Error generando PDF:", pdfError);
-      reciboPdfUrl = `/api/liquidaciones/${liquidacionId}/pdf`;
+      console.error("[registrarLiquidacion] Error generando o subiendo PDF:", pdfError);
     }
+
+    // Actualizar Liquidación con la URL del PDF generado
+    await prisma.liquidacion.update({
+      where: { id: liquidacionId },
+      data: { reciboPdfUrl },
+    }).catch(() => null);
 
     // 7. Generar Deep Link de WhatsApp
     const whatsappLink = buildWhatsAppLink(clienteData.whatsapp, {

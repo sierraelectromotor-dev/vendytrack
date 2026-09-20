@@ -24,6 +24,7 @@ import {
   AlertCircle,
   Pencil,
   Trash2,
+  HelpCircle,
 } from "lucide-react";
 import { EditarInsumoModal } from "./EditarInsumoModal";
 
@@ -40,6 +41,7 @@ export interface InsumoItem {
 export interface MovimientoItem {
   id: string;
   insumoNombre: string;
+  unidadMedida?: string;
   tipo: string;
   cantidad: number;
   costoUnitario: number | null;
@@ -274,8 +276,26 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
           </div>
         </div>
       ) : (
-        /* Grid de Insumos en Bodega */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-4">
+          {/* Explicación Didáctica del Costo Promedio Ponderado */}
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-stone-900 dark:to-stone-900/80 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl p-4 text-xs space-y-2 text-stone-700 dark:text-stone-300">
+            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-bold text-xs">
+              <HelpCircle className="w-4 h-4 text-coffee-600 dark:text-amber-400 shrink-0" />
+              <span>¿Cómo se calcula el Costo Promedio en VendyTrack? (Método Promedio Ponderado)</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-stone-600 dark:text-stone-400">
+              Cada vez que registras una nueva compra de insumos a un precio distinto, el sistema actualiza automáticamente el costo unitario para que tus costos y márgenes de ganancia reflejen la realidad:
+            </p>
+            <div className="bg-white/90 dark:bg-stone-800/90 rounded-xl p-2.5 font-mono text-[11px] text-coffee-950 dark:text-amber-200 border border-amber-200/60 dark:border-stone-700 shadow-2xs">
+              Nuevo Costo Promedio = [ (Stock Previo × Costo Previo) + (Cantidad Entrada × Costo Compra) ] ÷ Nuevo Stock Total
+            </div>
+            <p className="text-[10px] text-stone-500 italic">
+              <strong>Ejemplo práctico:</strong> Si tienes 10 kg en bodega a $30.000 ($300.000) y compras 10 kg a $40.000 ($400.000), tendrás 20 kg valorados en $700.000. El nuevo costo promedio automático será <strong>$35.000 / kg</strong>.
+            </p>
+          </div>
+
+          {/* Grid de Insumos en Bodega */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {insumos.map((i) => {
             const isLowStock = i.stockActual <= i.stockMinimo;
 
@@ -358,6 +378,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
               </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -467,7 +488,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                   <th className="pb-3">Fecha</th>
                   <th className="pb-3">Insumo</th>
                   <th className="pb-3">Tipo</th>
-                  <th className="pb-3 text-right">Cantidad</th>
+                  <th className="pb-3 text-right">Cantidad / Unidad</th>
                   <th className="pb-3 text-right">Costo Unit.</th>
                   <th className="pb-3">Referencia / Detalle</th>
                 </tr>
@@ -504,7 +525,10 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                       </td>
                       <td className="py-2.5 text-right font-black">
                         {isEntry ? "+" : "-"}
-                        {m.cantidad.toLocaleString("es-CO")}
+                        {m.cantidad.toLocaleString("es-CO")}{" "}
+                        <span className="text-[10px] text-stone-400 font-normal">
+                          {m.unidadMedida || ""}
+                        </span>
                       </td>
                       <td className="py-2.5 text-right text-stone-500">
                         {m.costoUnitario ? formatCOP(m.costoUnitario) : "-"}
@@ -629,6 +653,21 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                     className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-coffee-600"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Factura de Compra / Referencia
+                </label>
+                <input
+                  type="text"
+                  name="facturaCompra"
+                  placeholder="ej. FACT-2024-889 o Saldo Inicial"
+                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-coffee-600 font-mono"
+                />
+                <span className="text-[10px] text-stone-400 block mt-0.5">
+                  Número de factura o documento soporte para la entrada inicial al Kárdex
+                </span>
               </div>
 
               <div className="pt-3 flex justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
