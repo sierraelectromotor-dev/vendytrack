@@ -36,7 +36,6 @@ export default async function AdminLayout({
     { href: "/admin/clientes", label: "Clientes y Máquinas", icon: Building2 },
     { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
     { href: "/admin/rutas", label: "Rutas y Asignaciones", icon: MapPin },
-    { href: "/admin/precios", label: "Tarifas y Precios", icon: DollarSign },
     { href: "/admin/ruteros", label: "Usuarios y Ruteros", icon: Users },
   ];
 

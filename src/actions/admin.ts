@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
-import { TipoBebida, Rol } from "@prisma/client";
+import { TipoBebida, Rol, UnidadMedida } from "@prisma/client";
 import { getCurrentUser, setSessionCookie, requireAdmin, hashPassword } from "@/lib/auth";
 
 function getDatabaseUrl() {
@@ -125,6 +125,138 @@ export async function registrarEntradaBodega(formData: FormData) {
   } catch (error: any) {
     console.error("[registrarEntradaBodega] Error:", error);
     return { success: false, error: error.message || "Error registrando entrada" };
+  }
+}
+
+export async function crearInsumo(formData: FormData) {
+  await requireAdmin();
+
+  try {
+    const nombre = formData.get("nombre")?.toString().trim();
+    let codigo = formData.get("codigo")?.toString().trim().toUpperCase();
+    const unidadMedida = (formData.get("unidadMedida")?.toString() || "KG") as UnidadMedida;
+    const stockInicial = parseFloat(formData.get("stockInicial")?.toString() || "0");
+    const stockMinimo = parseFloat(formData.get("stockMinimo")?.toString() || "0");
+    const costoPromedio = parseFloat(formData.get("costoPromedio")?.toString() || "0");
+
+    if (!nombre) {
+      return { success: false, error: "El nombre del insumo es obligatorio" };
+    }
+
+    if (!codigo) {
+      // Auto-generar código a partir del nombre si no se especifica
+      codigo = `INS-${nombre.replace(/[^a-zA-Z0-9]/g, "-").toUpperCase().slice(0, 15)}`;
+    }
+
+    const existe = await prisma.insumo.findUnique({
+      where: { codigo },
+    });
+
+    if (existe) {
+      return { success: false, error: `Ya existe un insumo con el código ${codigo}` };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const insumo = await tx.insumo.create({
+        data: {
+          codigo,
+          nombre,
+          unidadMedida,
+          stockActual: stockInicial,
+          stockMinimo,
+          costoPromedio,
+        },
+      });
+
+      if (stockInicial > 0) {
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: insumo.id,
+            tipo: "ENTRADA_COMPRA",
+            cantidad: stockInicial,
+            costoUnitario: costoPromedio > 0 ? costoPromedio : null,
+            referencia: "Saldo Inicial de Bodega",
+          },
+        });
+      }
+    });
+
+    revalidatePath("/admin/inventario");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[crearInsumo] Error:", error);
+    return { success: false, error: error.message || "Error al crear insumo" };
+  }
+}
+
+export async function cargarInsumosEstandar() {
+  await requireAdmin();
+
+  try {
+    const standardInsumos = [
+      {
+        codigo: "INS-CAFE-SOLUBLE",
+        nombre: "Café Soluble Liofilizado",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 42000,
+      },
+      {
+        codigo: "INS-LECHE-POLVO",
+        nombre: "Leche en Polvo Vending",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 10,
+        costoPromedio: 28000,
+      },
+      {
+        codigo: "INS-COCOA",
+        nombre: "Cocoa Chocolatada Vending",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 24000,
+      },
+      {
+        codigo: "INS-VASOS-7OZ",
+        nombre: "Vasos Térmicos 7oz",
+        unidadMedida: "UNIDADES" as UnidadMedida,
+        stockMinimo: 500,
+        costoPromedio: 120,
+      },
+      {
+        codigo: "INS-MEZCLADORES",
+        nombre: "Mezcladores de Café",
+        unidadMedida: "UNIDADES" as UnidadMedida,
+        stockMinimo: 500,
+        costoPromedio: 30,
+      },
+    ];
+
+    let creados = 0;
+    for (const item of standardInsumos) {
+      const existe = await prisma.insumo.findUnique({
+        where: { codigo: item.codigo },
+      });
+
+      if (!existe) {
+        await prisma.insumo.create({
+          data: {
+            codigo: item.codigo,
+            nombre: item.nombre,
+            unidadMedida: item.unidadMedida,
+            stockActual: 0,
+            stockMinimo: item.stockMinimo,
+            costoPromedio: item.costoPromedio,
+          },
+        });
+        creados++;
+      }
+    }
+
+    revalidatePath("/admin/inventario");
+    return { success: true, creados };
+  } catch (error: any) {
+    console.error("[cargarInsumosEstandar] Error:", error);
+    return { success: false, error: error.message || "Error al cargar insumos estándar" };
   }
 }
 
