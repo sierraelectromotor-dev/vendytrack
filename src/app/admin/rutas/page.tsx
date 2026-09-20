@@ -7,7 +7,9 @@ import {
   asignarOperadorRuta,
   asignarMaquinaARuta,
 } from "@/actions/admin";
+import { obtenerVisitasExtraordinarias } from "@/actions/visitas";
 import MapaRutasWrapper from "@/components/admin/MapaRutasWrapper";
+import RutasExtraordinariasSection from "@/components/admin/RutasExtraordinariasSection";
 import {
   MapPin,
   PlusCircle,
@@ -19,17 +21,21 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 export default async function RutasPage() {
-  const [rutasRes, ruterosRes, clientesRes, bodegaRes] = await Promise.all([
+  const [rutasRes, ruterosRes, clientesRes, bodegaRes, visitasRes] = await Promise.all([
     obtenerRutas(),
     obtenerRuteros(),
     obtenerClientes(),
     obtenerBodegaPrincipal(),
+    obtenerVisitasExtraordinarias(),
   ]);
 
   const rutas = rutasRes.data || [];
   const ruteros = ruterosRes.data || [];
   const clientes = clientesRes.data || [];
+  const visitas = visitasRes.data || [];
   const bodega = bodegaRes.data || {
     id: "bodega-principal",
     nombre: "Bodega Central VendyTrack",
@@ -57,9 +63,16 @@ export default async function RutasPage() {
           Configuración de Rutas y Asignación de Ruteros
         </h2>
         <p className="text-xs text-stone-500">
-          Crea circuitos de visita, visualiza los recorridos desde la bodega principal y asigna máquinas y ruteros
+          Crea circuitos de visita, visualiza los recorridos desde la bodega principal y gestiona emergencias
         </p>
       </div>
+
+      {/* Sección de Emergencias y Visitas Extraordinarias */}
+      <RutasExtraordinariasSection
+        maquinas={todasLasMaquinas}
+        ruteros={ruteros}
+        initialVisitas={visitas}
+      />
 
       {/* Mapa de Rutas y Bodega */}
       <MapaRutasWrapper bodega={bodega} rutas={rutas} />

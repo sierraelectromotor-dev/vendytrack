@@ -35,7 +35,13 @@ import {
   Plus,
   RotateCcw,
   BadgeCheck,
+  Wrench,
+  Package,
+  BellRing,
+  Zap,
 } from "lucide-react";
+import { VisitaExtraordinariaItem } from "@/actions/visitas";
+import { AtenderVisitaModal } from "./AtenderVisitaModal";
 
 export interface MaquinaRutaItem {
   id: string;
@@ -55,17 +61,32 @@ export interface MaquinaRutaItem {
   ultimoReciboPdfUrl?: string | null;
 }
 
+export interface InsumoSimpleItem {
+  id: string;
+  nombre: string;
+  unidadMedida: string;
+  stockActual: number;
+}
+
 interface MobileLiquidacionFormProps {
   initialMaquinaId?: string;
   maquinasRuta?: MaquinaRutaItem[];
+  visitasExtraordinarias?: VisitaExtraordinariaItem[];
+  insumosDisponibles?: InsumoSimpleItem[];
 }
 
 export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
   initialMaquinaId = "maq-demo-01",
   maquinasRuta = [],
+  visitasExtraordinarias = [],
+  insumosDisponibles = [],
 }) => {
   const [currentMaquinaId, setCurrentMaquinaId] = useState<string>(initialMaquinaId);
   const [rutaMaquinas, setRutaMaquinas] = useState<MaquinaRutaItem[]>(maquinasRuta);
+  const [visitas, setVisitas] = useState<VisitaExtraordinariaItem[]>(visitasExtraordinarias);
+  const [visitaSeleccionada, setVisitaSeleccionada] = useState<VisitaExtraordinariaItem | null>(null);
+  const [modalAtenderVisitaAbierto, setModalAtenderVisitaAbierto] = useState(false);
+  const [segundaLiquidacionHabilitada, setSegundaLiquidacionHabilitada] = useState<Record<string, boolean>>({});
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -140,10 +161,33 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     }
   }, [maquinasRuta]);
 
+  useEffect(() => {
+    if (visitasExtraordinarias) {
+      setVisitas(visitasExtraordinarias);
+    }
+  }, [visitasExtraordinarias]);
+
   // Encontrar la máquina actual en la hoja de ruta
   const maquinaActual = useMemo(() => {
     return rutaMaquinas.find((m) => m.id === currentMaquinaId);
   }, [rutaMaquinas, currentMaquinaId]);
+
+  // Está liquidada hoy solo si NO tiene habilitada la segunda liquidación explícita
+  const estaLiquidadaHoyBloqueada = useMemo(() => {
+    if (!maquinaActual) return false;
+    if (segundaLiquidacionHabilitada[maquinaActual.id]) return false;
+    return maquinaActual.liquidadaHoy;
+  }, [maquinaActual, segundaLiquidacionHabilitada]);
+
+  const totalVisitasPendientes = useMemo(() => {
+    return visitas.filter((v) => v.estado === "PENDIENTE");
+  }, [visitas]);
+
+  const visitasMaquinaActual = useMemo(() => {
+    return visitas.filter(
+      (v) => v.maquinaId === currentMaquinaId && v.estado === "PENDIENTE"
+    );
+  }, [visitas, currentMaquinaId]);
 
   // Cargar contadores anteriores y precios al montar el componente o cambiar de máquina
   useEffect(() => {
@@ -191,7 +235,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
       setLoadingInitial(false);
     }
     loadData();
-  }, [currentMaquinaId, reset]);
+  }, [currentMaquinaId, reset, segundaLiquidacionHabilitada]);
 
   // Cálculos matemáticos reactivos instantáneos por cada pulsación
   const calculations = useMemo(() => {
@@ -399,6 +443,61 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
         </div>
       )}
 
+      {/* BANNER DE VISITAS EXTRAORDINARIAS / EMERGENCIAS PENDIENTES */}
+      {totalVisitasPendientes.length > 0 && (
+        <div className="bg-gradient-to-r from-rose-500/15 via-rose-600/10 to-amber-500/10 border-2 border-rose-500/40 rounded-2xl p-3.5 shadow-sm space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-xs">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              <BellRing className="w-4 h-4" />
+              <span>{totalVisitasPendientes.length} Órdenes de Emergencia Pendientes</span>
+            </div>
+            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300/40">
+              Prioridad
+            </span>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {totalVisitasPendientes.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => {
+                  if (v.maquinaId !== currentMaquinaId) {
+                    setCurrentMaquinaId(v.maquinaId);
+                  }
+                  setVisitaSeleccionada(v);
+                  setModalAtenderVisitaAbierto(true);
+                }}
+                className="flex-shrink-0 bg-white dark:bg-stone-900 border border-rose-200 dark:border-rose-900/60 hover:border-rose-500 rounded-xl p-2.5 text-left text-xs shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] min-w-[220px] max-w-[260px] space-y-1 group"
+              >
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    {v.tipo === "FALLA_TECNICA" && <Wrench className="w-3 h-3" />}
+                    {v.tipo === "REPOSICION_URGENTE" && <Package className="w-3 h-3" />}
+                    {v.tipo === "SEGUNDA_LIQUIDACION" && <RotateCcw className="w-3 h-3" />}
+                    #{v.consecutivo}
+                  </span>
+                  <span className="font-semibold text-stone-500 truncate max-w-[110px]">
+                    {v.maquinaSerial}
+                  </span>
+                </div>
+                <p className="font-bold text-stone-900 dark:text-white truncate">
+                  {v.clienteNombre}
+                </p>
+                <p className="text-[10px] text-stone-500 line-clamp-1 italic">
+                  "{v.motivoReporte}"
+                </p>
+                <div className="pt-1 flex items-center justify-between text-[10px] font-bold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+                  <span>Atender orden</span>
+                  <ArrowRight className="w-3 h-3" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 2. ENCABEZADO DE LA MÁQUINA SELECCIONADA */}
       <div className="bg-gradient-to-br from-coffee-800 to-coffee-950 text-white rounded-2xl p-4 shadow-mobile space-y-3 border border-coffee-700/40">
         <div className="flex items-center justify-between">
@@ -415,9 +514,13 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
               </span>
             </div>
           </div>
-          {maquinaActual?.liquidadaHoy ? (
+          {estaLiquidadaHoyBloqueada ? (
             <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-white rounded-full flex items-center gap-1 shadow-sm">
               <BadgeCheck className="w-3.5 h-3.5" /> Liquidada Hoy
+            </span>
+          ) : segundaLiquidacionHabilitada[maquinaActual?.id || ""] ? (
+            <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white rounded-full flex items-center gap-1 shadow-sm animate-pulse">
+              <RotateCcw className="w-3.5 h-3.5" /> 2da Liquidación
             </span>
           ) : (
             <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-amber-400 text-coffee-950 rounded-full">
@@ -442,7 +545,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
       </div>
 
       {/* 3. ESTADO BLOQUEADO: SI LA MÁQUINA YA FUE LIQUIDADA HOY */}
-      {maquinaActual?.liquidadaHoy ? (
+      {estaLiquidadaHoyBloqueada ? (
         <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-white dark:bg-stone-900 border border-emerald-500/30 rounded-2xl p-6 shadow-sm text-center space-y-4">
             <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
@@ -454,12 +557,12 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
                 Punto de Ruta Liquidado
               </span>
               <h2 className="text-2xl font-black text-stone-900 dark:text-white mt-1">
-                {maquinaActual.ultimoConsecutivo
+                {maquinaActual?.ultimoConsecutivo
                   ? `LIQ-${maquinaActual.ultimoConsecutivo.toString().padStart(4, "0")}`
                   : "Liquidación Registrada"}
               </h2>
               <p className="text-xs text-stone-500 mt-1">
-                {maquinaActual.ultimaLiquidacionFecha
+                {maquinaActual?.ultimaLiquidacionFecha
                   ? `Registrada el ${formatFechaColombia(maquinaActual.ultimaLiquidacionFecha)}`
                   : "Completada el día de hoy"}
               </p>
@@ -470,40 +573,40 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
               <div>
                 <span className="text-stone-500 block">Tazas Netas</span>
                 <span className="text-lg font-bold text-stone-900 dark:text-white">
-                  {maquinaActual.ultimoTotalTazas ?? "--"} tazas
+                  {maquinaActual?.ultimoTotalTazas ?? "--"} tazas
                 </span>
               </div>
               <div>
                 <span className="text-stone-500 block">Total Facturado</span>
                 <span className="text-lg font-black text-coffee-700 dark:text-amber-400">
-                  {formatCOP(maquinaActual.ultimoTotalFacturado || 0)}
+                  {formatCOP(maquinaActual?.ultimoTotalFacturado || 0)}
                 </span>
               </div>
               <div className="col-span-2 pt-2 border-t border-stone-200 dark:border-stone-700 flex justify-between text-[11px]">
                 <span className="text-stone-500">Método de Pago:</span>
                 <span className="font-bold text-stone-800 dark:text-stone-200">
-                  {maquinaActual.ultimoMetodoPago || "EFECTIVO"}
+                  {maquinaActual?.ultimoMetodoPago || "EFECTIVO"}
                 </span>
               </div>
             </div>
 
             {/* Acciones del Comprobante */}
-            <div className="space-y-2.5 pt-2">
+            <div className="space-y-3 pt-2">
               {/* Botón WhatsApp */}
               {clienteInfo.whatsapp && (
                 <a
                   href={buildWhatsAppLink(clienteInfo.whatsapp, {
-                    consecutivo: maquinaActual.ultimoConsecutivo || "Comprobante",
+                    consecutivo: maquinaActual?.ultimoConsecutivo || "Comprobante",
                     clienteNombre: clienteInfo.razonSocial,
                     sede: clienteInfo.sede,
                     maquinaSerial: maquinaInfo.codigoSerial,
                     maquinaModelo: maquinaInfo.modelo,
-                    totalFacturado: maquinaActual.ultimoTotalFacturado || 0,
-                    totalTazasNetas: maquinaActual.ultimoTotalTazas || 0,
-                    metodoPago: maquinaActual.ultimoMetodoPago || "EFECTIVO",
+                    totalFacturado: maquinaActual?.ultimoTotalFacturado || 0,
+                    totalTazasNetas: maquinaActual?.ultimoTotalTazas || 0,
+                    metodoPago: maquinaActual?.ultimoMetodoPago || "EFECTIVO",
                     pdfUrl:
-                      maquinaActual.ultimoReciboPdfUrl ||
-                      (maquinaActual.ultimaLiquidacionId
+                      maquinaActual?.ultimoReciboPdfUrl ||
+                      (maquinaActual?.ultimaLiquidacionId
                         ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/liquidaciones/${maquinaActual.ultimaLiquidacionId}/pdf`
                         : undefined),
                   })}
@@ -517,7 +620,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
               )}
 
               {/* Botón PDF */}
-              {maquinaActual.ultimoReciboPdfUrl && (
+              {maquinaActual?.ultimoReciboPdfUrl && (
                 <a
                   href={maquinaActual.ultimoReciboPdfUrl}
                   target="_blank"
@@ -529,12 +632,128 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
                 </a>
               )}
 
-              {/* Nota de bloqueo estricto */}
-              <div className="p-3 bg-stone-100 dark:bg-stone-800/80 rounded-xl text-[11px] text-stone-600 dark:text-stone-300 flex items-center gap-2 text-left">
-                <Lock className="w-4 h-4 text-stone-500 flex-shrink-0" />
-                <span>
-                  <strong>Punto cerrado:</strong> No se permite re-editar o reenviar. Para registrar otra visita en el mismo día, un administrador debe reasignar la ruta.
-                </span>
+              {/* Si hay una orden extraordinaria activa asignada para esta máquina específica */}
+              {visitasMaquinaActual.length > 0 && (
+                <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500/50 rounded-xl text-left space-y-2">
+                  <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-bold text-xs">
+                    <Zap className="w-4 h-4 text-rose-600 animate-bounce" />
+                    <span>Orden Extraordinaria Asignada: #{visitasMaquinaActual[0].consecutivo}</span>
+                  </div>
+                  <p className="text-xs text-stone-800 dark:text-stone-200">
+                    <strong>{visitasMaquinaActual[0].tipoLabel}:</strong> "{visitasMaquinaActual[0].motivoReporte}"
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVisitaSeleccionada(visitasMaquinaActual[0]);
+                      setModalAtenderVisitaAbierto(true);
+                    }}
+                    className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>Atender Esta Orden Ahora</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* PANEL DE ATENCIÓN EXTRAORDINARIA / RE-VISITA */}
+              <div className="p-3.5 bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl text-left space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-stone-800 dark:text-stone-200">
+                    ¿Re-visita o urgencia en esta máquina hoy?
+                  </span>
+                  <span className="text-[10px] text-stone-500">Mismo día</span>
+                </div>
+
+                <p className="text-[11px] text-stone-500">
+                  Si el cliente reportó avería, se agotó el producto o requieres un segundo arqueo en la tarde/noche:
+                </p>
+
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  {/* Botón Falla Técnica */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!maquinaActual) return;
+                      setVisitaSeleccionada({
+                        id: `draft-falla-${Date.now()}`,
+                        consecutivo: 0,
+                        tipo: "FALLA_TECNICA",
+                        tipoLabel: "Falla Técnica / Mantenimiento",
+                        estado: "PENDIENTE",
+                        estadoLabel: "Pendiente",
+                        prioridad: "ALTA",
+                        maquinaId: maquinaActual.id,
+                        maquinaSerial: maquinaActual.codigoSerial,
+                        maquinaUbicacion: maquinaActual.ubicacion,
+                        clienteId: clienteInfo.id,
+                        clienteNombre: clienteInfo.razonSocial,
+                        clienteSede: clienteInfo.sede,
+                        clienteDireccion: clienteInfo.direccion,
+                        clienteWhatsapp: clienteInfo.whatsapp,
+                        operadorId: "",
+                        operadorNombre: "",
+                        motivoReporte: "Soporte técnico y mantenimiento en campo",
+                        fechaCreacion: new Date().toISOString(),
+                      });
+                      setModalAtenderVisitaAbierto(true);
+                    }}
+                    className="flex flex-col items-center justify-center p-2.5 bg-white dark:bg-stone-900 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-stone-200 dark:border-stone-700 hover:border-rose-300 rounded-xl text-stone-700 dark:text-stone-300 hover:text-rose-600 transition-all text-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <Wrench className="w-4 h-4 text-rose-500" />
+                    <span className="text-[10px] font-bold leading-tight">Falla Técnica</span>
+                  </button>
+
+                  {/* Botón Surtir Insumos */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!maquinaActual) return;
+                      setVisitaSeleccionada({
+                        id: `draft-reposicion-${Date.now()}`,
+                        consecutivo: 0,
+                        tipo: "REPOSICION_URGENTE",
+                        tipoLabel: "Reposición Urgente de Insumos",
+                        estado: "PENDIENTE",
+                        estadoLabel: "Pendiente",
+                        prioridad: "ALTA",
+                        maquinaId: maquinaActual.id,
+                        maquinaSerial: maquinaActual.codigoSerial,
+                        maquinaUbicacion: maquinaActual.ubicacion,
+                        clienteId: clienteInfo.id,
+                        clienteNombre: clienteInfo.razonSocial,
+                        clienteSede: clienteInfo.sede,
+                        clienteDireccion: clienteInfo.direccion,
+                        clienteWhatsapp: clienteInfo.whatsapp,
+                        operadorId: "",
+                        operadorNombre: "",
+                        motivoReporte: "Reposición urgente de insumos sin recaudo",
+                        fechaCreacion: new Date().toISOString(),
+                      });
+                      setModalAtenderVisitaAbierto(true);
+                    }}
+                    className="flex flex-col items-center justify-center p-2.5 bg-white dark:bg-stone-900 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-stone-200 dark:border-stone-700 hover:border-amber-300 rounded-xl text-stone-700 dark:text-stone-300 hover:text-amber-600 transition-all text-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <Package className="w-4 h-4 text-amber-500" />
+                    <span className="text-[10px] font-bold leading-tight">Surtir Insumos</span>
+                  </button>
+
+                  {/* Botón 2da Liquidación */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!maquinaActual) return;
+                      setSegundaLiquidacionHabilitada((prev) => ({
+                        ...prev,
+                        [maquinaActual.id]: true,
+                      }));
+                    }}
+                    className="flex flex-col items-center justify-center p-2.5 bg-white dark:bg-stone-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border border-stone-200 dark:border-stone-700 hover:border-emerald-300 rounded-xl text-stone-700 dark:text-stone-300 hover:text-emerald-600 transition-all text-center gap-1.5 shadow-sm active:scale-95"
+                  >
+                    <RotateCcw className="w-4 h-4 text-emerald-500" />
+                    <span className="text-[10px] font-bold leading-tight">2da Liquidación</span>
+                  </button>
+                </div>
               </div>
 
               {/* Botón de Siguiente Máquina */}
@@ -561,8 +780,35 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
           </div>
         </div>
       ) : (
-        /* 4. FORMULARIO ACTIVO (MÁQUINA PENDIENTE DE LIQUIDAR) */
+        /* 4. FORMULARIO ACTIVO (MÁQUINA PENDIENTE DE LIQUIDAR O SEGUNDA LIQUIDACIÓN) */
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* AVISO DE SEGUNDA LIQUIDACIÓN EN PROGRESO */}
+          {segundaLiquidacionHabilitada[maquinaActual?.id || ""] && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-400 dark:border-emerald-800 rounded-xl p-3 text-xs flex items-center justify-between text-emerald-800 dark:text-emerald-300 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div>
+                  <span className="font-bold block">Registrando Segunda Liquidación del Día</span>
+                  <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400">
+                    Nuevo arqueo y cobro sin alterar la liquidación anterior.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSegundaLiquidacionHabilitada((prev) => ({
+                    ...prev,
+                    [maquinaActual?.id || ""]: false,
+                  }));
+                }}
+                className="text-[11px] font-bold px-2 py-1 bg-white dark:bg-stone-900 border border-emerald-300 dark:border-emerald-700 rounded-lg text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 shrink-0 shadow-xs"
+              >
+                Volver
+              </button>
+            </div>
+          )}
+
           {/* CABECERA VIVA DE TOTALES EN TIEMPO REAL */}
           <div className="bg-gradient-to-r from-coffee-50 to-amber-50 dark:from-stone-900 dark:to-stone-800 border-2 border-coffee-200 dark:border-coffee-900/50 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -901,6 +1147,36 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
             </button>
           </div>
         </form>
+      )}
+
+      {/* MODAL PARA ATENDER VISITAS EXTRAORDINARIAS (FALLA TÉCNICA / REPOSICIÓN) */}
+      {modalAtenderVisitaAbierto && visitaSeleccionada && (
+        <AtenderVisitaModal
+          visita={visitaSeleccionada}
+          insumosDisponibles={insumosDisponibles}
+          onClose={() => {
+            setModalAtenderVisitaAbierto(false);
+            setVisitaSeleccionada(null);
+          }}
+          onCompleted={() => {
+            // Actualizar estado local para reflejar que la visita quedó resuelta
+            setVisitas((prev) =>
+              prev.map((v) =>
+                v.id === visitaSeleccionada.id
+                  ? { ...v, estado: "COMPLETADA", estadoLabel: "Visita Resuelta" }
+                  : v
+              )
+            );
+          }}
+          onIrALiquidar={() => {
+            if (maquinaActual) {
+              setSegundaLiquidacionHabilitada((prev) => ({
+                ...prev,
+                [maquinaActual.id]: true,
+              }));
+            }
+          }}
+        />
       )}
     </div>
   );

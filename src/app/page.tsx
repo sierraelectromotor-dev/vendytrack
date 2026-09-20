@@ -14,6 +14,7 @@ import {
   PlusCircle,
   Package,
 } from "lucide-react";
+import { obtenerVisitasExtraordinarias } from "@/actions/visitas";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
@@ -82,6 +83,15 @@ export default async function HomePage() {
       })
       .catch(() => []);
   }
+
+  // Consultar visitas extraordinarias activas y catálogo de insumos para reposición
+  const [visitasExtraRes, insumos] = await Promise.all([
+    obtenerVisitasExtraordinarias({ estado: "PENDIENTE" }),
+    prisma.insumo.findMany({
+      select: { id: true, nombre: true, unidadMedida: true, stockActual: true },
+      orderBy: { nombre: "asc" },
+    }),
+  ]);
 
   const ahora = new Date();
   const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
@@ -222,6 +232,13 @@ export default async function HomePage() {
         <MobileLiquidacionForm
           initialMaquinaId={primeraMaquina.id}
           maquinasRuta={maquinasRuta}
+          visitasExtraordinarias={visitasExtraRes.data || []}
+          insumosDisponibles={insumos.map((i) => ({
+            id: i.id,
+            nombre: i.nombre,
+            unidadMedida: i.unidadMedida,
+            stockActual: Number(i.stockActual),
+          }))}
         />
       )}
     </div>

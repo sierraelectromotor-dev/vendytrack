@@ -57,6 +57,8 @@ model User {
   liquidaciones   Liquidacion[] @relation("OperadorLiquidaciones")
   rutasAsignadas  Ruta[]        @relation("OperadorRutas")
   transacciones   TransaccionContable[]
+  visitasAsignadas VisitaExtraordinaria[] @relation("OperadorVisitasExtra")
+  visitasCreadas   VisitaExtraordinaria[] @relation("AdminVisitasExtra")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -74,6 +76,7 @@ model Cliente {
   maquinas      Maquina[]
   liquidaciones Liquidacion[]
   usuarios      User[]
+  visitasExtra  VisitaExtraordinaria[]
   latitud       Float?
   longitud      Float?
   createdAt     DateTime      @default(now())
@@ -113,6 +116,7 @@ model Maquina {
   precios         PrecioMaquina[]
   configuraciones ConfigBebidaMaquina[]
   liquidaciones   Liquidacion[]
+  visitasExtra    VisitaExtraordinaria[]
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
 
@@ -317,5 +321,54 @@ model GastoFijo {
 
   @@index([activo])
 }
+
+enum TipoVisitaExtra {
+  FALLA_TECNICA
+  REPOSICION_URGENTE
+  SEGUNDA_LIQUIDACION
+}
+
+enum EstadoVisitaExtra {
+  PENDIENTE
+  EN_CAMINO
+  COMPLETADA
+  CANCELADA
+}
+
+model VisitaExtraordinaria {
+  id                 String            @id @default(cuid())
+  consecutivo        Int               @unique @default(autoincrement())
+  tipo               TipoVisitaExtra
+  estado             EstadoVisitaExtra @default(PENDIENTE)
+  prioridad          String            @default("ALTA") // NORMAL, ALTA, URGENTE
+  maquinaId          String
+  maquina            Maquina           @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+  clienteId          String
+  cliente            Cliente           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  operadorId         String
+  operador           User              @relation("OperadorVisitasExtra", fields: [operadorId], references: [id], onDelete: Restrict)
+  creadoPorId        String?
+  creadoPor          User?             @relation("AdminVisitasExtra", fields: [creadoPorId], references: [id], onDelete: SetNull)
+
+  motivoReporte      String            // Lo que reportó el cliente
+  notasAdmin         String?
+
+  solucionAplicada   String?           // Lo que hizo el técnico
+  fotoEvidenciaUrl   String?
+  fechaCompletada    DateTime?
+
+  detallesReposicion Json?             // Si entregó insumos: [{ insumoId, cantidad, nombre, unidadMedida }]
+  liquidacionId      String?           // Si generó una segunda liquidación
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([maquinaId])
+  @@index([clienteId])
+  @@index([operadorId])
+  @@index([estado])
+  @@index([createdAt])
+}
+
 
 
