@@ -1268,8 +1268,8 @@ export async function obtenerRutas() {
         maquinas: r.maquinas.map((m) => ({
           id: m.id,
           codigoSerial: m.codigoSerial,
-          clienteNombre: m.cliente.razonSocial,
-          sede: m.cliente.sede,
+          clienteNombre: m.cliente?.razonSocial || "En Bodega",
+          sede: m.cliente?.sede || "Bodega",
           ubicacion: m.ubicacion,
         })),
       })),

@@ -48,6 +48,13 @@ export async function obtenerDatosMaquina(maquinaId: string) {
       };
     }
 
+    if (!maquina.cliente) {
+      return {
+        success: false,
+        error: "Esta máquina se encuentra en bodega / taller y no tiene cliente asignado para liquidar.",
+      };
+    }
+
     // Mapear el último contador de cada bebida
     const ultimosDetalles = maquina.liquidaciones[0]?.detalles || [];
     const mapaUltimosContadores: Record<string, number> = {};
