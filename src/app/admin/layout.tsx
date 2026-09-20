@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { logoutAction } from "@/actions/auth";
+import { getCurrentUser } from "@/lib/auth";
 import {
   Coffee,
   Package,
@@ -11,13 +12,23 @@ import {
   LogOut,
   Smartphone,
   Shield,
+  Users,
 } from "lucide-react";
 
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const currentUser = await getCurrentUser();
+  const adminName = currentUser?.name || "Administrador";
+  const initials = adminName
+    .split(" ")
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   const navItems = [
     { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
     { href: "/admin/ruteros", label: "Ruteros / Operadores", icon: Truck },
@@ -99,17 +110,21 @@ export default function AdminLayout({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
+          <Link
+            href="/admin/ruteros"
+            className="flex items-center gap-3 text-xs p-1.5 rounded-xl hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors group"
+            title="Ver y editar perfil de administrador"
+          >
             <div className="text-right hidden sm:block">
-              <span className="font-bold text-stone-900 dark:text-white block">
-                Andrés Restrepo
+              <span className="font-bold text-stone-900 dark:text-white block group-hover:text-coffee-600 dark:group-hover:text-amber-400 transition-colors">
+                {adminName}
               </span>
               <span className="text-[10px] text-stone-400">Administrador de Operaciones</span>
             </div>
-            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold flex items-center justify-center border border-purple-300">
-              AR
+            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold flex items-center justify-center border border-purple-300 shadow-sm">
+              {initials}
             </div>
-          </div>
+          </Link>
         </header>
 
         <div className="p-4 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto">

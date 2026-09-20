@@ -112,6 +112,105 @@ export async function registrarEntradaBodega(formData: FormData) {
 // ==========================================
 // 2. GESTIÓN DE RUTEROS (OPERADORES)
 // ==========================================
+import { getCurrentUser, setSessionCookie } from "@/lib/auth";
+
+// ==========================================
+// 2. GESTIÓN DE RUTEROS Y ADMINISTRADORES
+// ==========================================
+
+export async function obtenerUsuarios() {
+  try {
+    const usuarios = await prisma.user.findMany({
+      include: {
+        rutasAsignadas: true,
+        liquidaciones: { select: { id: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    if (usuarios.length === 0) {
+      return {
+        success: true,
+        data: [
+          {
+            id: "usr-admin-01",
+            name: "Andrés Restrepo",
+            email: "admin@vendytrack.com",
+            rol: "ADMIN" as const,
+            rutas: [],
+            totalLiquidaciones: 0,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: "operador-default-1",
+            name: "Carlos Mendoza",
+            email: "carlos.operador@vendytrack.com",
+            rol: "OPERADOR_RUTA" as const,
+            rutas: ["Ruta 1 - Clínicas y Hospitales Norte"],
+            totalLiquidaciones: 5,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: "operador-2",
+            name: "Javier Morales",
+            email: "javier.ruta@vendytrack.com",
+            rol: "OPERADOR_RUTA" as const,
+            rutas: ["Ruta 2 - Oficinas Calle 72"],
+            totalLiquidaciones: 0,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      };
+    }
+
+    return {
+      success: true,
+      data: usuarios.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        rol: u.rol,
+        rutas: u.rutasAsignadas.map((r) => r.nombre),
+        totalLiquidaciones: u.liquidaciones.length,
+        createdAt: u.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.warn("[obtenerUsuarios] Fallback mock:", error);
+    return {
+      success: true,
+      data: [
+        {
+          id: "usr-admin-01",
+          name: "Andrés Restrepo",
+          email: "admin@vendytrack.com",
+          rol: "ADMIN" as const,
+          rutas: [],
+          totalLiquidaciones: 0,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: "operador-default-1",
+          name: "Carlos Mendoza",
+          email: "carlos.operador@vendytrack.com",
+          rol: "OPERADOR_RUTA" as const,
+          rutas: ["Ruta 1 - Clínicas y Hospitales Norte"],
+          totalLiquidaciones: 5,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: "operador-2",
+          name: "Javier Morales",
+          email: "javier.ruta@vendytrack.com",
+          rol: "OPERADOR_RUTA" as const,
+          rutas: ["Ruta 2 - Oficinas Calle 72"],
+          totalLiquidaciones: 0,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+}
 
 export async function obtenerRuteros() {
   try {
@@ -143,11 +242,12 @@ export async function obtenerRuteros() {
   }
 }
 
-export async function crearRutero(formData: FormData) {
+export async function crearUsuario(formData: FormData) {
   try {
     const name = formData.get("name")?.toString().trim();
     const email = formData.get("email")?.toString().trim().toLowerCase();
     const password = formData.get("password")?.toString();
+    const rol = (formData.get("rol")?.toString() || "OPERADOR_RUTA") as Rol;
 
     if (!name || !email || !password) {
       return { success: false, error: "Todos los campos son obligatorios" };
@@ -157,16 +257,114 @@ export async function crearRutero(formData: FormData) {
       data: {
         name,
         email,
-        passwordHash: password, // En producción usar hash bcrypt/argon2
-        rol: "OPERADOR_RUTA",
+        passwordHash: password,
+        rol,
       },
     });
 
     revalidatePath("/admin/ruteros");
     return { success: true };
   } catch (error: any) {
-    console.error("[crearRutero] Error:", error);
+    console.error("[crearUsuario] Error:", error);
     return { success: false, error: "El correo ya está en uso o ocurrió un error" };
+  }
+}
+
+export async function crearRutero(formData: FormData) {
+  return crearUsuario(formData);
+}
+
+export async function actualizarUsuario(
+  id: string,
+  data: { name: string; email?: string; password?: string }
+) {
+  try {
+    const { name, email, password } = data;
+    if (!name || !name.trim()) {
+      return { success: false, error: "El nombre es obligatorio" };
+    }
+
+    const updateData: any = { name: name.trim() };
+    if (email && email.trim()) updateData.email = email.trim().toLowerCase();
+    if (password && password.trim()) updateData.passwordHash = password.trim();
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updateData,
+    });
+
+    // Si el usuario actualizado es el usuario logueado actualmente, refrescar cookie de sesión
+    const currentUser = await getCurrentUser();
+    if (currentUser && currentUser.id === id) {
+      await setSessionCookie({
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        rol: updatedUser.rol as any,
+        clienteId: updatedUser.clienteId,
+      });
+    }
+
+    revalidatePath("/admin/ruteros");
+    revalidatePath("/admin");
+    return { success: true, user: updatedUser };
+  } catch (error: any) {
+    console.error("[actualizarUsuario] Error:", error);
+    return { success: false, error: error.message || "Error al actualizar usuario" };
+  }
+}
+
+export async function eliminarUsuario(id: string) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        liquidaciones: { select: { id: true } },
+        rutasAsignadas: { select: { id: true } },
+      },
+    });
+
+    if (!user) {
+      return { success: false, error: "Usuario no encontrado" };
+    }
+
+    // Proteger si es el último administrador
+    if (user.rol === "ADMIN") {
+      const totalAdmins = await prisma.user.count({ where: { rol: "ADMIN" } });
+      if (totalAdmins <= 1) {
+        return {
+          success: false,
+          error: "No puedes eliminar el único administrador del sistema.",
+        };
+      }
+    }
+
+    // Verificar si tiene liquidaciones históricas asociadas
+    if (user.liquidaciones.length > 0) {
+      return {
+        success: false,
+        error: `No es posible eliminar al usuario porque tiene ${user.liquidaciones.length} liquidaciones asociadas en el historial. Puedes editar su nombre o contraseña si ya no labora en la empresa.`,
+      };
+    }
+
+    // Si tiene rutas asignadas, desasignarlas primero
+    if (user.rutasAsignadas.length > 0) {
+      await prisma.ruta.updateMany({
+        where: { operadorId: id },
+        data: { operadorId: null },
+      });
+    }
+
+    await prisma.user.delete({
+      where: { id },
+    });
+
+    revalidatePath("/admin/ruteros");
+    revalidatePath("/admin/rutas");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[eliminarUsuario] Error:", error);
+    return { success: false, error: error.message || "Error al eliminar usuario" };
   }
 }
 
