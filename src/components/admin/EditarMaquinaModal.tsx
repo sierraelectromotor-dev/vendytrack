@@ -11,9 +11,10 @@ import {
   Building2,
   Package,
   Hash,
+  RotateCcw,
 } from "lucide-react";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
-import { actualizarMaquina } from "@/actions/admin";
+import { actualizarMaquina, habilitarReliquidacionHoy } from "@/actions/admin";
 
 interface ClienteOption {
   id: string;
@@ -58,6 +59,8 @@ interface EditarMaquinaModalProps {
     clienteId?: string | null;
     rutaId?: string | null;
     configuraciones: BebidaConfigEdit[];
+    liquidadaHoy?: boolean;
+    ultimoConsecutivo?: number | null;
   };
   clientes: ClienteOption[];
   rutas: RutaOption[];
@@ -84,6 +87,31 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
   const [clienteId, setClienteId] = useState(maquina.clienteId || "none");
   const [rutaId, setRutaId] = useState(maquina.rutaId || "none");
   const [numeroProductos, setNumeroProductos] = useState(maquina.numeroProductos);
+  const [liquidadaState, setLiquidadaState] = useState(maquina.liquidadaHoy || false);
+  const [isReopening, setIsReopening] = useState(false);
+  const [reopenSuccessMsg, setReopenSuccessMsg] = useState<string | null>(null);
+
+  const handleHabilitarReliquidacion = async () => {
+    if (
+      !window.confirm(
+        `¿Estás seguro de habilitar la máquina ${maquina.codigoSerial} para re-liquidar hoy?\n\nLa liquidación de hoy será anulada y el inventario de premezclas descontado será restaurado.`
+      )
+    ) {
+      return;
+    }
+    setIsReopening(true);
+    const res = await habilitarReliquidacionHoy(maquina.id);
+    setIsReopening(false);
+    if (res.success) {
+      setLiquidadaState(false);
+      setReopenSuccessMsg(
+        res.message || "Máquina habilitada con éxito para re-liquidar hoy."
+      );
+      if (onSuccess) onSuccess();
+    } else {
+      setError(res.error || "No se pudo habilitar la re-liquidación.");
+    }
+  };
 
   // Inicializar configuraciones completas para todas las bebidas del catálogo
   const [bebidas, setBebidas] = useState<BebidaConfigEdit[]>(() => {
@@ -189,6 +217,44 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
 
         {/* Formulario */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs">
+          {/* Banner si la máquina ya fue liquidada hoy */}
+          {liquidadaState && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-3.5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-xs">
+              <div className="space-y-0.5">
+                <span className="font-bold text-amber-900 dark:text-amber-200 block">
+                  Esta máquina ya fue liquidada hoy{" "}
+                  {maquina.ultimoConsecutivo
+                    ? `(LIQ-${maquina.ultimoConsecutivo.toString().padStart(4, "0")})`
+                    : ""}
+                  .
+                </span>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                  Si el rutero cometió un error o requiere una segunda visita, puedes desbloquearla aquí.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isReopening}
+                onClick={handleHabilitarReliquidacion}
+                className="shrink-0 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                {isReopening ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-3.5 h-3.5" />
+                )}
+                <span>{isReopening ? "Habilitando..." : "Habilitar Re-liquidación"}</span>
+              </button>
+            </div>
+          )}
+
+          {reopenSuccessMsg && (
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>{reopenSuccessMsg}</span>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-red-600 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />

@@ -24,13 +24,14 @@ import {
   Package,
   ArrowRightLeft,
   Warehouse,
+  RotateCcw,
 } from "lucide-react";
 import { EditarClienteModal } from "./EditarClienteModal";
 import { EditarMaquinaModal } from "./EditarMaquinaModal";
 import { CrearClienteModal } from "./CrearClienteModal";
 import { CrearMaquinaModal } from "./CrearMaquinaModal";
 import { AsignarMaquinaModal } from "./AsignarMaquinaModal";
-import { eliminarMaquina } from "@/actions/admin";
+import { eliminarMaquina, habilitarReliquidacionHoy } from "@/actions/admin";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
 export interface BebidaConfigItem {
@@ -60,6 +61,9 @@ export interface MaquinaItem {
   rutaId?: string | null;
   rutaNombre: string;
   activa?: boolean;
+  liquidadaHoy?: boolean;
+  ultimoConsecutivo?: number | null;
+  ultimaLiquidacionId?: string | null;
   configuraciones: BebidaConfigItem[];
 }
 
@@ -577,6 +581,45 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                             </div>
 
                             <div className="flex items-center gap-1 shrink-0">
+                              {/* Botón Habilitar Re-liquidación si ya fue liquidada hoy */}
+                              {m.liquidadaHoy && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const num = m.ultimoConsecutivo
+                                      ? `LIQ-${m.ultimoConsecutivo.toString().padStart(4, "0")}`
+                                      : "";
+                                    if (
+                                      !window.confirm(
+                                        `¿Estás seguro de habilitar la máquina ${m.codigoSerial} ${num ? `(${num})` : ""} para re-liquidar hoy?\n\nLa liquidación de hoy será anulada y el inventario descontado será restaurado.`
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    const res = await habilitarReliquidacionHoy(m.id);
+                                    if (res.success) {
+                                      setMensaje({
+                                        tipo: "success",
+                                        texto:
+                                          res.message ||
+                                          `Máquina ${m.codigoSerial} habilitada para re-liquidar hoy.`,
+                                      });
+                                    } else {
+                                      setMensaje({
+                                        tipo: "error",
+                                        texto:
+                                          res.error ||
+                                          "No se pudo habilitar la re-liquidación.",
+                                      });
+                                    }
+                                  }}
+                                  className="p-1.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 text-amber-700 dark:text-amber-300 rounded-xl shadow-2xs transition-colors"
+                                  title="Habilitar re-liquidación de hoy (anula la liquidación actual y restaura inventario)"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                </button>
+                              )}
+
                               {/* Botón Editar / Reasignar */}
                               <button
                                 type="button"
@@ -741,6 +784,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             numeroProductos: selectedMaquinaParaEditar.numeroProductos,
             clienteId: selectedMaquinaParaEditar.clienteId,
             rutaId: selectedMaquinaParaEditar.rutaId,
+            liquidadaHoy: selectedMaquinaParaEditar.liquidadaHoy,
+            ultimoConsecutivo: selectedMaquinaParaEditar.ultimoConsecutivo,
             configuraciones: selectedMaquinaParaEditar.configuraciones.map((c) => ({
               ...c,
               contadorInicial: c.contadorInicial ?? 0,

@@ -24,7 +24,11 @@ import {
   Inbox,
   CheckCircle2,
   Clock,
+  RotateCcw,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { habilitarReliquidacionHoy } from "@/actions/admin";
 
 export interface DetalleItem {
   id: string;
@@ -55,7 +59,7 @@ export interface LiquidacionItem {
   fotoContadorUrl: string;
   firmaClienteUrl: string;
   reciboPdfUrl: string;
-  notas?: string | null;
+  notas: string | null;
   totalTazas: number;
   detalles: DetalleItem[];
 }
@@ -63,12 +67,15 @@ export interface LiquidacionItem {
 interface DashboardRecaudosProps {
   initialData: {
     liquidaciones: LiquidacionItem[];
-    clientes: Array<{ id: string; nombre: string }>;
+    clientes: { id: string; nombre: string }[];
   };
 }
 
 export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialData }) => {
   const { liquidaciones, clientes } = initialData;
+  const [liquidacionesState, setLiquidacionesState] = useState<LiquidacionItem[]>(liquidaciones);
+  const [isReopenPending, setIsReopenPending] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
 
   // Estados de filtros
   const [filtroPeriodo, setFiltroPeriodo] = useState<string>("este_mes");
@@ -81,6 +88,42 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
   // Estado de modal para ver evidencias de liquidación
   const [selectedLiquidacion, setSelectedLiquidacion] = useState<LiquidacionItem | null>(null);
 
+  const handleHabilitarReliquidacion = async (
+    maquinaId: string,
+    liquidacionId: string,
+    consecutivo: number | string
+  ) => {
+    const num =
+      typeof consecutivo === "number"
+        ? `LIQ-${consecutivo.toString().padStart(4, "0")}`
+        : consecutivo;
+    if (
+      !window.confirm(
+        `¿Estás seguro de anular la liquidación ${num} y habilitar la máquina para que el rutero pueda liquidarla de nuevo hoy?\n\nEl inventario de premezclas descontado será restaurado a la bodega.`
+      )
+    ) {
+      return;
+    }
+
+    setIsReopenPending(true);
+    const res = await habilitarReliquidacionHoy(maquinaId, liquidacionId);
+    setIsReopenPending(false);
+
+    if (res.success) {
+      setLiquidacionesState((prev) => prev.filter((l) => l.id !== liquidacionId));
+      setSelectedLiquidacion(null);
+      setActionFeedback({
+        tipo: "success",
+        texto: res.message || "Liquidación anulada y máquina habilitada para hoy.",
+      });
+    } else {
+      setActionFeedback({
+        tipo: "error",
+        texto: res.error || "No se pudo habilitar la re-liquidación.",
+      });
+    }
+  };
+
   // Mapeo amigable de nombres de bebidas
   const nombreBebidasMap = useMemo(() => {
     return Object.fromEntries(BEBIDAS_CATALOGO.map((b) => [b.id, b.nombre]));
@@ -92,7 +135,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
     const añoActual = ahora.getFullYear();
     const mesActual = ahora.getMonth();
 
-    return liquidaciones.filter((item) => {
+    return liquidacionesState.filter((item) => {
       const fechaItem = new Date(item.fecha);
 
       // 1. Filtro por Periodo de Fecha
@@ -252,6 +295,33 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
 
   return (
     <div className="space-y-6">
+      {/* Alerta de Acción / Feedback */}
+      {actionFeedback && (
+        <div
+          className={`p-4 rounded-2xl border text-xs flex items-center justify-between shadow-sm animate-in fade-in duration-200 ${
+            actionFeedback.tipo === "success"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300"
+              : "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {actionFeedback.tipo === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+            )}
+            <span className="font-medium">{actionFeedback.texto}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActionFeedback(null)}
+            className="text-xs font-bold hover:underline ml-3"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {/* Cabecera del Dashboard */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -777,8 +847,29 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
               </div>
             </div>
 
-            {/* Botón de Descarga de Recibo PDF */}
-            <div className="pt-2 flex justify-end gap-2">
+            {/* Botones de Acción del Modal */}
+            <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 dark:border-stone-800">
+              <button
+                type="button"
+                disabled={isReopenPending}
+                onClick={() =>
+                  handleHabilitarReliquidacion(
+                    selectedLiquidacion.maquinaId,
+                    selectedLiquidacion.id,
+                    selectedLiquidacion.consecutivo
+                  )
+                }
+                className="py-2.5 px-3.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/80 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                title="Anula esta liquidación, restaura el inventario y habilita la máquina para que el rutero pueda liquidarla de nuevo hoy"
+              >
+                {isReopenPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                )}
+                <span>{isReopenPending ? "Habilitando..." : "Habilitar Re-liquidación de Hoy"}</span>
+              </button>
+
               <a
                 href={selectedLiquidacion.reciboPdfUrl}
                 target="_blank"

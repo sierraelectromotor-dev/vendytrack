@@ -665,6 +665,10 @@ export async function obtenerClientes() {
         }
       }
 
+      const ahora = new Date();
+      const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+      const liquidadaHoy = ultimaLiq ? new Date(ultimaLiq.fecha) >= inicioHoy : false;
+
       return {
         id: m.id,
         codigoSerial: m.codigoSerial,
@@ -677,6 +681,9 @@ export async function obtenerClientes() {
         rutaId: m.rutaId,
         rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
         activa: m.activa,
+        liquidadaHoy,
+        ultimoConsecutivo: ultimaLiq?.consecutivo ?? null,
+        ultimaLiquidacionId: ultimaLiq?.id ?? null,
         configuraciones: m.configuraciones.map((cfg: any) => {
           const ultimo = mapaUltimosContadores[cfg.bebida] ?? cfg.contadorInicial ?? 0;
           const insumoId = (cfg as any).insumoId || null;
@@ -1434,3 +1441,87 @@ export async function obtenerDashboardRecaudos() {
     };
   }
 }
+
+// ==========================================
+// 7. HABILITAR RE-LIQUIDACIÓN DE HOY (ANULACIÓN SEGURA)
+// ==========================================
+
+export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId?: string) {
+  await requireAdmin();
+
+  try {
+    const hoyInicio = new Date();
+    hoyInicio.setHours(0, 0, 0, 0);
+
+    // Buscar la liquidación de hoy para esta máquina (o por ID específico)
+    const liqHoy = await prisma.liquidacion.findFirst({
+      where: liquidacionId
+        ? { id: liquidacionId }
+        : {
+            maquinaId,
+            fecha: { gte: hoyInicio },
+          },
+      include: {
+        detalles: true,
+        movimientos: true,
+      },
+      orderBy: { fecha: "desc" },
+    });
+
+    if (!liqHoy) {
+      return {
+        success: false,
+        error: "No se encontró ninguna liquidación registrada hoy para esta máquina.",
+      };
+    }
+
+    // Revertir inventario si hubo movimientos de Kárdex asociados (SALIDA_CONSUMO)
+    await prisma.$transaction(async (tx) => {
+      for (const mov of liqHoy.movimientos) {
+        if (
+          mov.tipo === "SALIDA_TEORICA_LIQUIDACION" ||
+          mov.tipo === "SALIDA_FISICA_REPOSICION"
+        ) {
+          await tx.insumo.update({
+            where: { id: mov.insumoId },
+            data: {
+              stockActual: {
+                increment: mov.cantidad,
+              },
+            },
+          });
+        }
+        await tx.movimientoInventario.delete({
+          where: { id: mov.id },
+        });
+      }
+
+      // Eliminar detalles de la liquidación
+      await tx.detalleLiquidacion.deleteMany({
+        where: { liquidacionId: liqHoy.id },
+      });
+
+      // Eliminar la liquidación para permitir la nueva captura limpia
+      await tx.liquidacion.delete({
+        where: { id: liqHoy.id },
+      });
+    });
+
+    revalidatePath("/");
+    revalidatePath("/admin");
+    revalidatePath("/admin/clientes");
+    revalidatePath("/liquidacion");
+
+    return {
+      success: true,
+      message: `Liquidación LIQ-${liqHoy.consecutivo} anulada con éxito. El inventario fue restaurado y la máquina está habilitada nuevamente para que el operador registre la liquidación.`,
+    };
+  } catch (error: any) {
+    console.error("[habilitarReliquidacionHoy] Error:", error);
+    return {
+      success: false,
+      error: error.message || "Error al habilitar re-liquidación",
+    };
+  }
+}
+
