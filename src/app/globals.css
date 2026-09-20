@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 24 15% 97%;
+    --foreground: 20 14.3% 4.1%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 20 14.3% 4.1%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14.3% 4.1%;
+
+    --primary: 25 45% 35%;
+    --primary-foreground: 60 9.1% 97.8%;
+
+    --secondary: 24 10% 92%;
+    --secondary-foreground: 24 9.8% 10%;
+
+    --muted: 24 10% 92%;
+    --muted-foreground: 25 5.3% 44.7%;
+
+    --accent: 25 80% 95%;
+    --accent-foreground: 25 45% 35%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 60 9.1% 97.8%;
+
+    --border: 20 5.9% 90%;
+    --input: 20 5.9% 90%;
+    --ring: 25 45% 35%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 20 18% 7%;
+    --foreground: 60 9.1% 97.8%;
+
+    --card: 20 14% 10%;
+    --card-foreground: 60 9.1% 97.8%;
+
+    --popover: 20 14% 10%;
+    --popover-foreground: 60 9.1% 97.8%;
+
+    --primary: 25 55% 45%;
+    --primary-foreground: 60 9.1% 97.8%;
+
+    --secondary: 20 10% 16%;
+    --secondary-foreground: 60 9.1% 97.8%;
+
+    --muted: 20 10% 16%;
+    --muted-foreground: 24 5.4% 63.9%;
+
+    --accent: 20 15% 18%;
+    --accent-foreground: 60 9.1% 97.8%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 60 9.1% 97.8%;
+
+    --border: 20 10% 18%;
+    --input: 20 10% 18%;
+    --ring: 25 55% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Optimización móvil para campos numéricos */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
