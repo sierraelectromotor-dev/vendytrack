@@ -754,3 +754,82 @@ export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
     return { success: false, error: error.message };
   }
 }
+
+// ==========================================
+// 6. DASHBOARD Y GESTIÓN DE RECAUDOS
+// ==========================================
+
+export async function obtenerDashboardRecaudos() {
+  await requireAdmin();
+
+  try {
+    const liquidaciones = await prisma.liquidacion.findMany({
+      include: {
+        cliente: true,
+        maquina: true,
+        operador: true,
+        detalles: true,
+      },
+      orderBy: { fecha: "desc" },
+    });
+
+    const clientes = await prisma.cliente.findMany({
+      select: {
+        id: true,
+        razonSocial: true,
+        sede: true,
+      },
+      orderBy: { razonSocial: "asc" },
+    });
+
+    return {
+      success: true,
+      data: {
+        liquidaciones: liquidaciones.map((l) => ({
+          id: l.id,
+          consecutivo: l.consecutivo,
+          fecha: l.fecha.toISOString(),
+          clienteId: l.clienteId,
+          clienteNombre: l.cliente.razonSocial,
+          sede: l.cliente.sede,
+          maquinaId: l.maquinaId,
+          maquinaSerial: l.maquina.codigoSerial,
+          maquinaModelo: l.maquina.modelo,
+          ubicacion: l.maquina.ubicacion,
+          operadorId: l.operadorId,
+          operadorNombre: l.operador.name,
+          metodoPago: l.metodoPago,
+          totalFacturado: Number(l.totalFacturado),
+          fotoContadorUrl: l.fotoContadorUrl,
+          firmaClienteUrl: l.firmaClienteUrl,
+          reciboPdfUrl: l.reciboPdfUrl || `/api/liquidaciones/${l.id}/pdf`,
+          notas: l.notas,
+          totalTazas: l.detalles.reduce((acc, d) => acc + d.tazasNetas, 0),
+          detalles: l.detalles.map((d) => ({
+            id: d.id,
+            bebida: d.bebida,
+            contadorAnterior: d.contadorAnterior,
+            contadorActual: d.contadorActual,
+            bebidasDanadas: d.bebidasDanadas,
+            tazasNetas: d.tazasNetas,
+            precioUnitario: Number(d.precioUnitario),
+            subtotal: Number(d.subtotal),
+          })),
+        })),
+        clientes: clientes.map((c) => ({
+          id: c.id,
+          nombre: `${c.razonSocial} (${c.sede})`,
+        })),
+      },
+    };
+  } catch (error: any) {
+    console.error("[obtenerDashboardRecaudos] Error:", error);
+    return {
+      success: true,
+      data: {
+        liquidaciones: [],
+        clientes: [],
+      },
+    };
+  }
+}

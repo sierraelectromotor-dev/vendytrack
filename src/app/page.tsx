@@ -39,7 +39,7 @@ export default async function HomePage() {
       {isAdmin && (
         <div className="max-w-lg mx-auto px-4 mb-3">
           <Link
-            href="/admin/inventario"
+            href="/admin"
             className="w-full flex items-center justify-between p-3 bg-purple-900 text-white rounded-2xl shadow-lg border border-purple-700/50 hover:bg-purple-800 transition-all text-xs group"
           >
             <div className="flex items-center gap-2">
@@ -47,7 +47,7 @@ export default async function HomePage() {
               <div>
                 <span className="font-bold block">Acceso a Panel Administrativo</span>
                 <span className="text-[10px] text-purple-200">
-                  Bodega, Rutas, Clientes y Tarifas
+                  Dashboard, Recaudos, Clientes y Bodega
                 </span>
               </div>
             </div>

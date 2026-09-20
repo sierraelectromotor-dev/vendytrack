@@ -4,6 +4,7 @@ import { logoutAction } from "@/actions/auth";
 import { getCurrentUser } from "@/lib/auth";
 import {
   Coffee,
+  LayoutDashboard,
   Package,
   Truck,
   Building2,
@@ -29,12 +30,14 @@ export default async function AdminLayout({
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
   const navItems = [
-    { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
-    { href: "/admin/ruteros", label: "Ruteros / Operadores", icon: Truck },
+    { href: "/admin", label: "Dashboard / Recaudos", icon: LayoutDashboard },
     { href: "/admin/clientes", label: "Clientes y Máquinas", icon: Building2 },
-    { href: "/admin/precios", label: "Tarifas y Precios", icon: DollarSign },
+    { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
     { href: "/admin/rutas", label: "Rutas y Asignaciones", icon: MapPin },
+    { href: "/admin/precios", label: "Tarifas y Precios", icon: DollarSign },
+    { href: "/admin/ruteros", label: "Usuarios y Ruteros", icon: Users },
   ];
 
   return (
