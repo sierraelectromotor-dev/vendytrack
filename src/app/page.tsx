@@ -1,8 +1,8 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import prisma from "@/lib/prisma";
 import { MobileLiquidacionForm } from "@/components/liquidacion/MobileLiquidacionForm";
-import { RoleSwitcher } from "@/components/ui/RoleSwitcher";
 import { logoutAction } from "@/actions/auth";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -10,7 +10,9 @@ import {
   Shield,
   ArrowRight,
   LogOut,
-  Building,
+  Truck,
+  PlusCircle,
+  Package,
 } from "lucide-react";
 
 export default async function HomePage() {
@@ -22,6 +24,14 @@ export default async function HomePage() {
   }
 
   const isAdmin = user?.rol === "ADMIN";
+
+  // Buscar la primera máquina configurada en la base de datos
+  const primeraMaquina = await prisma.maquina
+    .findFirst({
+      include: { cliente: true },
+      orderBy: { createdAt: "asc" },
+    })
+    .catch(() => null);
 
   return (
     <div className="min-h-screen bg-stone-100 dark:bg-stone-950 py-3 sm:py-6">
@@ -63,12 +73,23 @@ export default async function HomePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <RoleSwitcher />
+          {/* Badge de usuario autenticado (Solo lectura - no modificable) */}
+          <div className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-800 flex items-center gap-1.5 shadow-sm">
+            {isAdmin ? (
+              <Shield className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            ) : (
+              <Truck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            )}
+            <span className="truncate max-w-[110px]">
+              {user?.name || (isAdmin ? "Admin" : "Operador")}
+            </span>
+          </div>
+
           <form action={logoutAction}>
             <button
               type="submit"
               title="Cerrar sesión"
-              className="p-1.5 text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 bg-stone-200/70 dark:bg-stone-800 rounded-full transition-colors"
+              className="p-1.5 text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-full transition-colors shadow-sm"
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>
@@ -76,8 +97,49 @@ export default async function HomePage() {
         </div>
       </header>
 
-      {/* Formulario Mobile de Liquidación en Campo */}
-      <MobileLiquidacionForm initialMaquinaId="maq-demo-01" />
+      {/* Si no hay máquinas configuradas todavía */}
+      {!primeraMaquina ? (
+        <div className="max-w-lg mx-auto px-4">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl p-6 text-center space-y-4 shadow-sm">
+            <div className="w-14 h-14 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+              <Coffee className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-base font-black text-stone-900 dark:text-white">
+                Sistema listo para configurar
+              </h2>
+              <p className="text-xs text-stone-500 max-w-xs mx-auto">
+                {isAdmin
+                  ? "No hay máquinas de café registradas aún. Comienza creando tus insumos en bodega, clientes y máquinas desde el panel administrativo."
+                  : "No hay máquinas asignadas para liquidar en este momento. Comunícate con el administrador para que te asigne una ruta."}
+              </p>
+            </div>
+
+            {isAdmin && (
+              <div className="pt-2 flex flex-col gap-2">
+                <Link
+                  href="/admin/clientes"
+                  className="w-full py-2.5 px-4 bg-coffee-800 hover:bg-coffee-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Crear Primer Cliente y Máquina</span>
+                </Link>
+                <Link
+                  href="/admin/inventario"
+                  className="w-full py-2.5 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                >
+                  <Package className="w-4 h-4" />
+                  <span>Configurar Insumos de Bodega</span>
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Formulario Mobile de Liquidación en Campo con máquina real */
+        <MobileLiquidacionForm initialMaquinaId={primeraMaquina.id} />
+      )}
     </div>
   );
 }

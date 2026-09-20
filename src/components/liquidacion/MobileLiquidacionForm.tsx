@@ -54,11 +54,11 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     contacto: string;
     whatsapp: string;
   }>({
-    razonSocial: "Hospital Universitario San José",
-    sede: "Sede Centro",
-    direccion: "Calle 10 # 5-22",
-    contacto: "Dra. Claudia Pérez",
-    whatsapp: "+573005559876",
+    razonSocial: "Cargando cliente...",
+    sede: "",
+    direccion: "",
+    contacto: "",
+    whatsapp: "",
   });
 
   const [maquinaInfo, setMaquinaInfo] = useState<{
@@ -66,9 +66,9 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     modelo: string;
     ubicacion: string;
   }>({
-    codigoSerial: "MAQ-COL-2024-089",
-    modelo: "Bianchi Soluble 4 Tolvas",
-    ubicacion: "Cafetería Principal Piso 2",
+    codigoSerial: "",
+    modelo: "",
+    ubicacion: "",
   });
 
   const [counterPhotoPreview, setCounterPhotoPreview] = useState<string | null>(null);

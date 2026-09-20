@@ -14,13 +14,19 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { LiquidacionReceiptPdf } from "@/components/pdf/LiquidacionReceiptPdf";
 import { formatFechaColombia } from "@/lib/utils";
+import { getCurrentUser } from "@/lib/auth";
 
 /**
  * Consulta los datos de la máquina, cliente, precios configurados
- * y el último Contador Anterior (C.F) registrado para cada una de las 7 bebidas.
+ * y el último Contador Anterior (C.F) registrado para cada una de las bebidas.
  */
 export async function obtenerDatosMaquina(maquinaId: string) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return { success: false, error: "No autorizado: Inicia sesión." };
+    }
+
     const maquina = await prisma.maquina.findUnique({
       where: { id: maquinaId },
       include: {
@@ -36,8 +42,10 @@ export async function obtenerDatosMaquina(maquinaId: string) {
     });
 
     if (!maquina) {
-      // Si la base de datos no tiene datos aún, retornamos un mock para pruebas en caliente
-      return getMockMaquinaData(maquinaId);
+      return {
+        success: false,
+        error: "Máquina no encontrada o aún no configurada en la base de datos.",
+      };
     }
 
     // Mapear el último contador de cada bebida
@@ -98,6 +106,7 @@ export async function obtenerDatosMaquina(maquinaId: string) {
           modelo: maquina.modelo,
           ubicacion: maquina.ubicacion,
           numeroProductos: maquina.numeroProductos,
+          tipo: "MANUAL_RUTA",
         },
         cliente: {
           id: maquina.cliente.id,
@@ -110,28 +119,37 @@ export async function obtenerDatosMaquina(maquinaId: string) {
         bebidas: bebidasConContadores,
       },
     };
-  } catch (error) {
-    console.error("[obtenerDatosMaquina] Error al consultar datos:", error);
-    // Retornar fallback para desarrollo local
-    return getMockMaquinaData(maquinaId);
+  } catch (error: any) {
+    console.error("[obtenerDatosMaquina] Error:", error);
+    return {
+      success: false,
+      error: error.message || "Error al obtener datos de la máquina",
+    };
   }
 }
 
 /**
  * Server Action principal:
- * 1. Valida el formulario con Zod
- * 2. Sube la foto del contador y la firma táctil a Vercel Blob
- * 3. Registra la liquidación y detalles en Postgres con Prisma
- * 4. Aplica el Kárdex serverless (descuento teórico de insumos según recetas)
- * 5. Genera el PDF con @react-pdf/renderer y lo almacena en Vercel Blob
- * 6. Construye el deep link oficial de WhatsApp para disparo directo
+ * 1. Valida el usuario autenticado
+ * 2. Valida el formulario con Zod
+ * 3. Sube la foto del contador (opcional) y la firma táctil a Vercel Blob
+ * 4. Registra la liquidación y detalles en Postgres con Prisma
+ * 5. Aplica el Kárdex serverless (descuento teórico de insumos según recetas)
+ * 6. Genera el PDF con @react-pdf/renderer y lo almacena en Vercel Blob
+ * 7. Construye el deep link oficial de WhatsApp para disparo directo
  */
 export async function registrarLiquidacion(formData: LiquidacionFormData) {
   try {
-    // 1. Validación estricta con Zod
+    // 1. Verificar autenticación del operador
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return { success: false, error: "Debes iniciar sesión para registrar una liquidación." };
+    }
+
+    // 2. Validación estricta con Zod
     const validatedData = liquidacionFormSchema.parse(formData);
 
-    // 2. Subida de evidencias a Vercel Blob (foto es opcional)
+    // 3. Subida de evidencias a Vercel Blob (foto es opcional)
     const [fotoContadorUrl, firmaClienteUrl] = await Promise.all([
       validatedData.fotoContadorBase64 && validatedData.fotoContadorBase64.length > 50
         ? uploadCounterPhoto(
@@ -148,7 +166,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       ),
     ]);
 
-    // 3. Cálculos matemáticos en servidor
+    // 4. Cálculos matemáticos en servidor
     let totalTazasNetas = 0;
     let totalFacturado = 0;
 
@@ -171,168 +189,197 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       };
     });
 
-    // 4. Obtener información de cliente y máquina (o mocks si DB no está conectada)
-    let clienteData = {
-      razonSocial: "Clínica Sanitas",
-      sede: "Principal Piso 3",
-      direccion: "Cra 15 # 98-42",
-      contacto: "Dra. Marcela Gómez",
-      whatsapp: "+573001234567",
-    };
-    let maquinaData = {
-      codigoSerial: "VEN-2024-089",
-      modelo: "Bianchi Lei 4 Tolvas Soluble",
-      ubicacion: "Pasillo Médicos",
-    };
+    // 5. Validar existencia real de cliente y máquina en la base de datos
+    const clienteDb = await prisma.cliente.findUnique({
+      where: { id: validatedData.clienteId },
+    });
+    const maquinaDb = await prisma.maquina.findUnique({
+      where: { id: validatedData.maquinaId },
+    });
 
-    let operadorId = "operador-default-1";
-    let operadorNombre = "Carlos Mendoza (Operador de Ruta)";
-    let consecutivoGenerado = Math.floor(1000 + Math.random() * 9000);
-    let liquidacionId = `liq-${Date.now()}`;
-
-    // Intentar transacción en Prisma
-    try {
-      const clienteDb = await prisma.cliente.findUnique({
-        where: { id: validatedData.clienteId },
-      });
-      const maquinaDb = await prisma.maquina.findUnique({
-        where: { id: validatedData.maquinaId },
-      });
-      const operadorDb = await prisma.user.findFirst({
-        where: { rol: "OPERADOR_RUTA" },
-      });
-
-      if (clienteDb) clienteData = clienteDb;
-      if (maquinaDb) maquinaData = maquinaDb;
-      if (operadorDb) {
-        operadorId = operadorDb.id;
-        operadorNombre = operadorDb.name;
-      }
-
-      // Transacción en base de datos
-      const nuevaLiquidacion = await prisma.$transaction(async (tx) => {
-        // A. Crear cabecera de liquidación
-        const liq = await tx.liquidacion.create({
-          data: {
-            clienteId: validatedData.clienteId,
-            maquinaId: validatedData.maquinaId,
-            operadorId: operadorId,
-            metodoPago: validatedData.metodoPago,
-            totalFacturado: totalFacturado,
-            fotoContadorUrl: fotoContadorUrl,
-            firmaClienteUrl: firmaClienteUrl,
-            notas: validatedData.notas,
-            detalles: {
-              create: lineasCalculadas.map((l) => ({
-                bebida: l.bebida,
-                contadorAnterior: l.contadorAnterior,
-                contadorActual: l.contadorActual,
-                bebidasDanadas: l.bebidasDanadas,
-                tazasNetas: l.tazasNetas,
-                precioUnitario: l.precioUnitario,
-                subtotal: l.subtotal,
-              })),
-            },
-          },
-        });
-
-        // B. Kárdex Serverless: Descuento teórico de insumos según calibración de la máquina
-        const configMaquina = await tx.configBebidaMaquina.findMany({
-          where: { maquinaId: validatedData.maquinaId },
-        });
-        const configMap = new Map(configMaquina.map((c) => [c.bebida, c]));
-
-        const insumosList = await tx.insumo.findMany();
-        const insumosMap = new Map(insumosList.map((i) => [i.codigo, i.id]));
-        const idCafe = insumosMap.get("INS-CAFE-SOLUBLE");
-        const idLeche = insumosMap.get("INS-LECHE-POLVO");
-        const idCocoa = insumosMap.get("INS-COCOA");
-        const idVasos = insumosMap.get("INS-VASOS-7OZ");
-        const idMezcladores = insumosMap.get("INS-MEZCLADORES");
-
-        for (const linea of lineasCalculadas) {
-          if (linea.tazasNetas <= 0) continue;
-
-          const cfg = configMap.get(linea.bebida);
-
-          if (cfg && (Number(cfg.gramosCafe) > 0 || Number(cfg.gramosLeche) > 0 || Number(cfg.gramosCocoa) > 0)) {
-            // Descuento exacto según la calibración de esta máquina en gramos
-            const itemsADescontar: Array<{ insumoId: string | undefined; cantidad: number }> = [
-              { insumoId: idCafe, cantidad: (Number(cfg.gramosCafe) * linea.tazasNetas) / 1000 },
-              { insumoId: idLeche, cantidad: (Number(cfg.gramosLeche) * linea.tazasNetas) / 1000 },
-              { insumoId: idCocoa, cantidad: (Number(cfg.gramosCocoa) * linea.tazasNetas) / 1000 },
-              { insumoId: idVasos, cantidad: linea.tazasNetas },
-              { insumoId: idMezcladores, cantidad: linea.tazasNetas },
-            ];
-
-            for (const item of itemsADescontar) {
-              if (!item.insumoId || item.cantidad <= 0) continue;
-              await tx.movimientoInventario.create({
-                data: {
-                  insumoId: item.insumoId,
-                  tipo: "SALIDA_TEORICA_LIQUIDACION",
-                  cantidad: item.cantidad,
-                  referencia: `LIQ-${liq.consecutivo}`,
-                  liquidacionId: liq.id,
-                  operadorId: operadorId,
-                },
-              });
-              await tx.insumo.update({
-                where: { id: item.insumoId },
-                data: { stockActual: { decrement: item.cantidad } },
-              });
-            }
-          } else {
-            // Fallback a recetas estándar globales
-            const recetas = await tx.recetaInsumo.findMany({
-              where: { bebida: linea.bebida },
-              include: { insumo: true },
-            });
-
-            for (const receta of recetas) {
-              const cantidadDescontar = Number(receta.cantidadPorTaza) * linea.tazasNetas;
-              await tx.movimientoInventario.create({
-                data: {
-                  insumoId: receta.insumoId,
-                  tipo: "SALIDA_TEORICA_LIQUIDACION",
-                  cantidad: cantidadDescontar,
-                  referencia: `LIQ-${liq.consecutivo}`,
-                  liquidacionId: liq.id,
-                  operadorId: operadorId,
-                },
-              });
-              await tx.insumo.update({
-                where: { id: receta.insumoId },
-                data: { stockActual: { decrement: cantidadDescontar } },
-              });
-            }
-          }
-        }
-
-        return liq;
-      });
-
-      liquidacionId = nuevaLiquidacion.id;
-      consecutivoGenerado = nuevaLiquidacion.consecutivo;
-    } catch (dbError) {
-      console.warn("[registrarLiquidacion] Transacción DB omitida o simulada:", dbError);
+    if (!clienteDb || !maquinaDb) {
+      return {
+        success: false,
+        error: "El cliente o la máquina no existen en la base de datos.",
+      };
     }
 
-    // 5. Generar PDF con @react-pdf/renderer
-    const nombreBebidasMap = Object.fromEntries(
-      BEBIDAS_CATALOGO.map((b) => [b.id, b.nombre])
-    );
+    const clienteData = clienteDb;
+    const maquinaData = maquinaDb;
+    const operadorId = currentUser.id;
+    const operadorNombre = currentUser.name;
 
+    // Transacción en base de datos
+    const nuevaLiquidacion = await prisma.$transaction(async (tx) => {
+      // A. Crear cabecera de liquidación
+      const liq = await tx.liquidacion.create({
+        data: {
+          clienteId: validatedData.clienteId,
+          maquinaId: validatedData.maquinaId,
+          operadorId: operadorId,
+          metodoPago: validatedData.metodoPago,
+          totalFacturado: totalFacturado,
+          fotoContadorUrl: fotoContadorUrl,
+          firmaClienteUrl: firmaClienteUrl,
+          notas: validatedData.notas,
+          detalles: {
+            create: lineasCalculadas.map((l) => ({
+              bebida: l.bebida,
+              contadorAnterior: l.contadorAnterior,
+              contadorActual: l.contadorActual,
+              bebidasDanadas: l.bebidasDanadas,
+              tazasNetas: l.tazasNetas,
+              precioUnitario: l.precioUnitario,
+              subtotal: l.subtotal,
+            })),
+          },
+        },
+      });
+
+      // B. Kárdex Serverless: Descuento teórico de insumos según calibración de la máquina
+      const configMaquina = await tx.configBebidaMaquina.findMany({
+        where: { maquinaId: validatedData.maquinaId },
+      });
+      const configMap = new Map(configMaquina.map((c) => [c.bebida, c]));
+
+      const insumosList = await tx.insumo.findMany();
+      const insumosMap = new Map(insumosList.map((i) => [i.codigo, i.id]));
+      const idCafe = insumosMap.get("INS-CAFE-SOLUBLE");
+      const idLeche = insumosMap.get("INS-LECHE-POLVO");
+      const idCocoa = insumosMap.get("INS-COCOA");
+      const idVasos = insumosMap.get("INS-VASOS-7OZ");
+      const idMezcl = insumosMap.get("INS-MEZCLADORES");
+
+      let totalGramosCafe = 0;
+      let totalGramosLeche = 0;
+      let totalGramosCocoa = 0;
+
+      for (const linea of lineasCalculadas) {
+        const cfg = configMap.get(linea.bebida);
+        const gramosCafe = cfg ? Number(cfg.gramosCafe) : 2.0;
+        const gramosLeche = cfg ? Number(cfg.gramosLeche) : 0;
+        const gramosCocoa = cfg ? Number(cfg.gramosCocoa) : 0;
+
+        totalGramosCafe += linea.tazasNetas * gramosCafe;
+        totalGramosLeche += linea.tazasNetas * gramosLeche;
+        totalGramosCocoa += linea.tazasNetas * gramosCocoa;
+      }
+
+      // Descontar Café (convertir gramos a kg si la unidad de insumo es KG)
+      if (idCafe && totalGramosCafe > 0) {
+        const cantKg = totalGramosCafe / 1000;
+        await tx.insumo.update({
+          where: { id: idCafe },
+          data: { stockActual: { decrement: cantKg } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: idCafe,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: cantKg,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
+          },
+        });
+      }
+
+      // Descontar Leche
+      if (idLeche && totalGramosLeche > 0) {
+        const cantKg = totalGramosLeche / 1000;
+        await tx.insumo.update({
+          where: { id: idLeche },
+          data: { stockActual: { decrement: cantKg } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: idLeche,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: cantKg,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
+          },
+        });
+      }
+
+      // Descontar Cocoa
+      if (idCocoa && totalGramosCocoa > 0) {
+        const cantKg = totalGramosCocoa / 1000;
+        await tx.insumo.update({
+          where: { id: idCocoa },
+          data: { stockActual: { decrement: cantKg } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: idCocoa,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: cantKg,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
+          },
+        });
+      }
+
+      // Descontar Vasos y Mezcladores
+      if (idVasos && totalTazasNetas > 0) {
+        await tx.insumo.update({
+          where: { id: idVasos },
+          data: { stockActual: { decrement: totalTazasNetas } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: idVasos,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: totalTazasNetas,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
+          },
+        });
+      }
+
+      if (idMezcl && totalTazasNetas > 0) {
+        await tx.insumo.update({
+          where: { id: idMezcl },
+          data: { stockActual: { decrement: totalTazasNetas } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId: idMezcl,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: totalTazasNetas,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
+          },
+        });
+      }
+
+      return liq;
+    });
+
+    const consecutivoGenerado = nuevaLiquidacion.consecutivo;
+    const liquidacionId = nuevaLiquidacion.id;
+
+    // 6. Generación de PDF
     const pdfData = {
       consecutivo: consecutivoGenerado,
       fecha: formatFechaColombia(new Date()),
-      cliente: clienteData,
-      maquina: maquinaData,
+      cliente: {
+        razonSocial: clienteData.razonSocial,
+        sede: clienteData.sede,
+        direccion: clienteData.direccion,
+        contacto: clienteData.contacto,
+        whatsapp: clienteData.whatsapp,
+      },
+      maquina: {
+        codigoSerial: maquinaData.codigoSerial,
+        modelo: maquinaData.modelo,
+        ubicacion: maquinaData.ubicacion,
+      },
       operadorNombre: operadorNombre,
       metodoPago: validatedData.metodoPago,
       detalles: lineasCalculadas.map((l) => ({
-        ...l,
-        nombreBebida: nombreBebidasMap[l.bebida] || l.bebida,
+        bebida: l.bebida,
+        nombreBebida: BEBIDAS_CATALOGO.find((b) => b.id === l.bebida)?.nombre || l.bebida,
+        contadorAnterior: l.contadorAnterior,
+        contadorActual: l.contadorActual,
+        bebidasDanadas: l.bebidasDanadas,
+        tazasNetas: l.tazasNetas,
+        precioUnitario: l.precioUnitario,
+        subtotal: l.subtotal,
       })),
       totales: {
         totalTazasNetas,
@@ -355,10 +402,10 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       }).catch(() => null);
     } catch (pdfError) {
       console.error("[registrarLiquidacion] Error generando PDF:", pdfError);
-      reciboPdfUrl = `https://demo.public.blob.vercel-storage.com/recibos/recibo-${consecutivoGenerado}.pdf`;
+      reciboPdfUrl = `/api/liquidaciones/${liquidacionId}/pdf`;
     }
 
-    // 6. Generar Deep Link de WhatsApp
+    // 7. Generar Deep Link de WhatsApp
     const whatsappLink = buildWhatsAppLink(clienteData.whatsapp, {
       consecutivo: consecutivoGenerado,
       clienteNombre: clienteData.razonSocial,
@@ -392,57 +439,4 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       error: error.message || "Error al procesar la liquidación",
     };
   }
-}
-
-/**
- * Mock de datos iniciales para demostración y desarrollo local
- */
-function getMockMaquinaData(maquinaId: string) {
-  const preciosPorDefecto: Record<TipoBebidaEnum, number> = {
-    CAPUCHINO_VAINILLA: 2500,
-    CAPUCHINO_TRADICIONAL: 2500,
-    MOCACCINO: 2800,
-    CAFE_CORTO_EXPRESO: 1800,
-    CAFE_LARGO_TINTO: 1800,
-    LATTE: 2600,
-    CHOCOLATE_CHOCOMILK: 2400,
-  };
-
-  const contadoresAnterioresDemo: Record<TipoBebidaEnum, number> = {
-    CAPUCHINO_VAINILLA: 1420,
-    CAPUCHINO_TRADICIONAL: 1105,
-    MOCACCINO: 890,
-    CAFE_CORTO_EXPRESO: 2310,
-    CAFE_LARGO_TINTO: 3450,
-    LATTE: 780,
-    CHOCOLATE_CHOCOMILK: 940,
-  };
-
-  return {
-    success: true,
-    data: {
-      maquina: {
-        id: maquinaId || "maq-demo-01",
-        codigoSerial: "MAQ-COL-2024-089",
-        modelo: "Bianchi Soluble 4 Tolvas",
-        ubicacion: "Cafetería Principal Piso 2",
-        tipo: "MANUAL_RUTA",
-      },
-      cliente: {
-        id: "cli-demo-01",
-        razonSocial: "Hospital Universitario San José",
-        sede: "Sede Centro",
-        direccion: "Calle 10 # 5-22",
-        contacto: "Dra. Claudia Pérez",
-        whatsapp: "+573005559876",
-      },
-      bebidas: BEBIDAS_CATALOGO.map((b) => ({
-        bebida: b.id,
-        nombre: b.nombre,
-        icono: b.icono,
-        contadorAnterior: contadoresAnterioresDemo[b.id] || 100,
-        precioUnitario: preciosPorDefecto[b.id],
-      })),
-    },
-  };
 }

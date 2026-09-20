@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { setSessionCookie, clearSessionCookie, USUARIOS_DEMO, SessionUser } from "@/lib/auth";
+import { setSessionCookie, clearSessionCookie, verifyPassword, hashPassword, SessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
 export async function loginAction(
@@ -17,35 +17,42 @@ export async function loginAction(
 
   let userToAuth: SessionUser | null = null;
 
-  // 1. Verificar primero en usuarios de prueba (DEMO)
-  if (USUARIOS_DEMO[email] && USUARIOS_DEMO[email].password === password) {
-    userToAuth = USUARIOS_DEMO[email].user;
-  } else {
-    // 2. Si no está en demo, consultar en la base de datos PostgreSQL
-    try {
-      const userFromDb = await prisma.user.findUnique({
-        where: { email },
-      });
+  try {
+    const userFromDb = await prisma.user.findUnique({
+      where: { email },
+    });
 
-      if (userFromDb && userFromDb.passwordHash === password) {
-        userToAuth = {
-          id: userFromDb.id,
-          name: userFromDb.name,
-          email: userFromDb.email,
-          rol: userFromDb.rol,
-          clienteId: userFromDb.clienteId,
-        };
+    if (userFromDb && verifyPassword(password, userFromDb.passwordHash)) {
+      // Si la contraseña estaba almacenada en texto plano, migrarla de inmediato a hash scrypt
+      if (!userFromDb.passwordHash.includes(":")) {
+        try {
+          await prisma.user.update({
+            where: { id: userFromDb.id },
+            data: { passwordHash: hashPassword(password) },
+          });
+        } catch (updateErr) {
+          console.warn("[loginAction] Error migrando hash de contraseña:", updateErr);
+        }
       }
-    } catch (e) {
-      console.warn("[loginAction] No se pudo consultar la base de datos:", e);
+
+      userToAuth = {
+        id: userFromDb.id,
+        name: userFromDb.name,
+        email: userFromDb.email,
+        rol: userFromDb.rol,
+        clienteId: userFromDb.clienteId,
+      };
     }
+  } catch (e) {
+    console.error("[loginAction] Error consultando la base de datos:", e);
+    return { error: "Error conectando con el servidor de autenticación. Intenta de nuevo." };
   }
 
   if (!userToAuth) {
     return { error: "Credenciales inválidas. Verifica tu correo o contraseña." };
   }
 
-  // Establecer cookie de sesión segura
+  // Establecer cookie de sesión segura (HTTP-only)
   await setSessionCookie(userToAuth);
 
   redirect("/");

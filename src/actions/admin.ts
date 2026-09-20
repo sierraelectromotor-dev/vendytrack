@@ -2,14 +2,29 @@
 
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
-import { BEBIDAS_CATALOGO, TipoBebidaEnum } from "@/types/liquidacion";
-import { TipoBebida, Rol, TipoMovimientoInventario, UnidadMedida } from "@prisma/client";
+import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
+import { TipoBebida, Rol } from "@prisma/client";
+import { getCurrentUser, setSessionCookie, requireAdmin, hashPassword } from "@/lib/auth";
+
+function getDatabaseUrl() {
+  const url =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_PRISMA_DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    "";
+  if (!process.env.DATABASE_URL && url) {
+    process.env.DATABASE_URL = url;
+  }
+  return url.trim();
+}
 
 // ==========================================
 // 1. INVENTARIO DE BODEGA & KÁRDEX
 // ==========================================
 
 export async function obtenerInventarioBodega() {
+  await requireAdmin();
+
   try {
     const insumos = await prisma.insumo.findMany({
       orderBy: { nombre: "asc" },
@@ -47,12 +62,20 @@ export async function obtenerInventarioBodega() {
       },
     };
   } catch (error) {
-    console.warn("[obtenerInventarioBodega] Fallback mock:", error);
-    return getMockInventario();
+    console.error("[obtenerInventarioBodega] Error:", error);
+    return {
+      success: true,
+      data: {
+        insumos: [],
+        movimientos: [],
+      },
+    };
   }
 }
 
 export async function registrarEntradaBodega(formData: FormData) {
+  await requireAdmin();
+
   try {
     const insumoId = formData.get("insumoId")?.toString();
     const cantidad = parseFloat(formData.get("cantidad")?.toString() || "0");
@@ -106,15 +129,12 @@ export async function registrarEntradaBodega(formData: FormData) {
 }
 
 // ==========================================
-// 2. GESTIÓN DE RUTEROS (OPERADORES)
-// ==========================================
-import { getCurrentUser, setSessionCookie } from "@/lib/auth";
-
-// ==========================================
 // 2. GESTIÓN DE RUTEROS Y ADMINISTRADORES
 // ==========================================
 
 export async function obtenerUsuarios() {
+  await requireAdmin();
+
   try {
     const usuarios = await prisma.user.findMany({
       include: {
@@ -137,7 +157,7 @@ export async function obtenerUsuarios() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerUsuarios] Fallback error:", error);
+    console.error("[obtenerUsuarios] Error:", error);
     return {
       success: true,
       data: [],
@@ -146,6 +166,8 @@ export async function obtenerUsuarios() {
 }
 
 export async function obtenerRuteros() {
+  await requireAdmin();
+
   try {
     const ruteros = await prisma.user.findMany({
       where: { rol: "OPERADOR_RUTA" },
@@ -166,7 +188,7 @@ export async function obtenerRuteros() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerRuteros] Fallback error:", error);
+    console.error("[obtenerRuteros] Error:", error);
     return {
       success: true,
       data: [],
@@ -174,24 +196,14 @@ export async function obtenerRuteros() {
   }
 }
 
-function getDatabaseUrl() {
-  const url =
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_PRISMA_DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    "";
-  if (!process.env.DATABASE_URL && url) {
-    process.env.DATABASE_URL = url;
-  }
-  return url.trim();
-}
-
 export async function crearUsuario(formData: FormData) {
+  await requireAdmin();
+
   try {
     if (!getDatabaseUrl()) {
       return {
         success: false,
-        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+        error: "Falta configurar DATABASE_URL en Vercel.",
       };
     }
 
@@ -208,7 +220,7 @@ export async function crearUsuario(formData: FormData) {
       data: {
         name,
         email,
-        passwordHash: password,
+        passwordHash: hashPassword(password.trim()),
         rol,
       },
     });
@@ -230,10 +242,20 @@ export async function actualizarUsuario(
   data: { name: string; email?: string; password?: string }
 ) {
   try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return { success: false, error: "No autorizado: Inicia sesión." };
+    }
+
+    // Solo un administrador o el propio usuario pueden editar este perfil
+    if (currentUser.rol !== "ADMIN" && currentUser.id !== id) {
+      return { success: false, error: "No tienes permisos para modificar este usuario." };
+    }
+
     if (!getDatabaseUrl()) {
       return {
         success: false,
-        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+        error: "Falta configurar DATABASE_URL en Vercel.",
       };
     }
 
@@ -244,7 +266,7 @@ export async function actualizarUsuario(
 
     const updateData: any = { name: name.trim() };
     if (email && email.trim()) updateData.email = email.trim().toLowerCase();
-    if (password && password.trim()) updateData.passwordHash = password.trim();
+    if (password && password.trim()) updateData.passwordHash = hashPassword(password.trim());
 
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -252,8 +274,7 @@ export async function actualizarUsuario(
     });
 
     // Si el usuario actualizado es el usuario logueado actualmente, refrescar cookie de sesión
-    const currentUser = await getCurrentUser();
-    if (currentUser && currentUser.id === id) {
+    if (currentUser.id === id) {
       await setSessionCookie({
         id: updatedUser.id,
         name: updatedUser.name,
@@ -273,11 +294,13 @@ export async function actualizarUsuario(
 }
 
 export async function eliminarUsuario(id: string) {
+  await requireAdmin();
+
   try {
     if (!getDatabaseUrl()) {
       return {
         success: false,
-        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+        error: "Falta configurar DATABASE_URL en Vercel.",
       };
     }
 
@@ -338,6 +361,8 @@ export async function eliminarUsuario(id: string) {
 // ==========================================
 
 export async function obtenerClientes() {
+  await requireAdmin();
+
   try {
     const clientes = await prisma.cliente.findMany({
       include: {
@@ -380,7 +405,7 @@ export async function obtenerClientes() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerClientes] Fallback error:", error);
+    console.error("[obtenerClientes] Error:", error);
     return {
       success: true,
       data: [],
@@ -389,6 +414,8 @@ export async function obtenerClientes() {
 }
 
 export async function crearCliente(formData: FormData) {
+  await requireAdmin();
+
   try {
     const razonSocial = formData.get("razonSocial")?.toString().trim();
     const sede = formData.get("sede")?.toString().trim();
@@ -419,6 +446,8 @@ export async function crearCliente(formData: FormData) {
 }
 
 export async function crearMaquina(formData: FormData) {
+  await requireAdmin();
+
   try {
     const codigoSerial = formData.get("codigoSerial")?.toString().trim();
     const modelo = formData.get("modelo")?.toString().trim();
@@ -488,6 +517,8 @@ export async function guardarCalibracionMaquina(
     precio: number;
   }>
 ) {
+  await requireAdmin();
+
   try {
     for (const c of configuraciones) {
       await prisma.configBebidaMaquina.upsert({
@@ -531,6 +562,8 @@ export async function guardarCalibracionMaquina(
 // ==========================================
 
 export async function obtenerPreciosPorMaquina(maquinaId: string) {
+  await requireAdmin();
+
   try {
     const precios = await prisma.precioMaquina.findMany({
       where: { maquinaId },
@@ -560,7 +593,7 @@ export async function obtenerPreciosPorMaquina(maquinaId: string) {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerPreciosPorMaquina] Fallback mock:", error);
+    console.error("[obtenerPreciosPorMaquina] Error:", error);
     return {
       success: true,
       data: BEBIDAS_CATALOGO.map((b) => ({
@@ -577,6 +610,8 @@ export async function actualizarPreciosMaquina(
   maquinaId: string,
   precios: Record<string, number>
 ) {
+  await requireAdmin();
+
   try {
     for (const [bebida, precio] of Object.entries(precios)) {
       await prisma.precioMaquina.upsert({
@@ -609,6 +644,8 @@ export async function actualizarPreciosMaquina(
 // ==========================================
 
 export async function obtenerRutas() {
+  await requireAdmin();
+
   try {
     const rutas = await prisma.ruta.findMany({
       include: {
@@ -641,7 +678,7 @@ export async function obtenerRutas() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerRutas] Fallback error:", error);
+    console.error("[obtenerRutas] Error:", error);
     return {
       success: true,
       data: [],
@@ -650,6 +687,8 @@ export async function obtenerRutas() {
 }
 
 export async function crearRuta(formData: FormData) {
+  await requireAdmin();
+
   try {
     const nombre = formData.get("nombre")?.toString().trim();
     const descripcion = formData.get("descripcion")?.toString().trim();
@@ -678,6 +717,8 @@ export async function crearRuta(formData: FormData) {
 }
 
 export async function asignarOperadorRuta(rutaId: string, operadorId: string) {
+  await requireAdmin();
+
   try {
     await prisma.ruta.update({
       where: { id: rutaId },
@@ -695,6 +736,8 @@ export async function asignarOperadorRuta(rutaId: string, operadorId: string) {
 }
 
 export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
+  await requireAdmin();
+
   try {
     await prisma.maquina.update({
       where: { id: maquinaId },
@@ -710,129 +753,4 @@ export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
     console.error("[asignarMaquinaARuta] Error:", error);
     return { success: false, error: error.message };
   }
-}
-
-// ==========================================
-// MOCKS PARA DESARROLLO LOCAL
-// ==========================================
-
-function getMockInventario() {
-  return {
-    success: true,
-    data: {
-      insumos: [
-        { id: "ins-1", codigo: "INS-CAFE", nombre: "Café Soluble Liofilizado (kg)", unidadMedida: "KG", stockActual: 48.5, stockMinimo: 10, costoPromedio: 42000 },
-        { id: "ins-2", codigo: "INS-LECHE", nombre: "Leche en Polvo Vending (kg)", unidadMedida: "KG", stockActual: 74.2, stockMinimo: 15, costoPromedio: 28000 },
-        { id: "ins-3", codigo: "INS-COCOA", nombre: "Cocoa Chocolatada Vending (kg)", unidadMedida: "KG", stockActual: 38.0, stockMinimo: 8, costoPromedio: 24000 },
-        { id: "ins-4", codigo: "INS-VASOS", nombre: "Vasos Térmicos 7oz (unidades)", unidadMedida: "UNIDADES", stockActual: 4620, stockMinimo: 1000, costoPromedio: 120 },
-        { id: "ins-5", codigo: "INS-MEZCL", nombre: "Mezcladores de Café (unidades)", unidadMedida: "UNIDADES", stockActual: 4850, stockMinimo: 1000, costoPromedio: 30 },
-      ],
-      movimientos: [
-        { id: "mov-1", insumoNombre: "Café Soluble Liofilizado (kg)", tipo: "ENTRADA_COMPRA", cantidad: 20, costoUnitario: 42000, referencia: "FAC-8902 - Colcafé", fecha: new Date().toISOString() },
-        { id: "mov-2", insumoNombre: "Leche en Polvo Vending (kg)", tipo: "ENTRADA_COMPRA", cantidad: 50, costoUnitario: 28000, referencia: "FAC-4412 - Alquería", fecha: new Date(Date.now() - 86400000).toISOString() },
-      ],
-    },
-  };
-}
-
-function getMockRuteros() {
-  return {
-    success: true,
-    data: [
-      { id: "operador-default-1", name: "Carlos Mendoza", email: "carlos.operador@vendytrack.com", rutas: ["Ruta 1 - Clínicas y Hospitales Norte"], createdAt: new Date().toISOString() },
-      { id: "operador-2", name: "Javier Morales", email: "javier.ruta@vendytrack.com", rutas: ["Ruta 2 - Oficinas Calle 72"], createdAt: new Date().toISOString() },
-    ],
-  };
-}
-
-function getMockClientes() {
-  return {
-    success: true,
-    data: [
-      {
-        id: "cli-demo-01",
-        razonSocial: "Hospital Universitario San José",
-        sede: "Sede Centro",
-        direccion: "Calle 10 # 5-22",
-        contacto: "Dra. Claudia Pérez",
-        whatsapp: "+573005559876",
-        maquinas: [
-          {
-            id: "maq-demo-01",
-            codigoSerial: "MAQ-COL-2024-089",
-            modelo: "Bianchi Soluble 4 Tolvas",
-            ubicacion: "Cafetería Principal Piso 2",
-            numeroProductos: 4,
-            rutaNombre: "Ruta 1 - Clínicas y Hospitales Norte",
-            configuraciones: [
-              { id: "cfg-1", bebida: "CAFE_LARGO_TINTO", activa: true, gramosCafe: 2.2, gramosLeche: 0, gramosCocoa: 0, precio: 1800 },
-              { id: "cfg-2", bebida: "CAFE_CORTO_EXPRESO", activa: true, gramosCafe: 2.0, gramosLeche: 0, gramosCocoa: 0, precio: 1800 },
-              { id: "cfg-3", bebida: "CAPUCHINO_TRADICIONAL", activa: true, gramosCafe: 2.0, gramosLeche: 12.0, gramosCocoa: 0, precio: 2500 },
-              { id: "cfg-4", bebida: "CHOCOLATE_CHOCOMILK", activa: true, gramosCafe: 0, gramosLeche: 6.0, gramosCocoa: 16.0, precio: 2400 },
-              { id: "cfg-5", bebida: "CAPUCHINO_VAINILLA", activa: false, gramosCafe: 1.8, gramosLeche: 12.0, gramosCocoa: 0, precio: 2500 },
-              { id: "cfg-6", bebida: "MOCACCINO", activa: false, gramosCafe: 1.8, gramosLeche: 8.0, gramosCocoa: 10.0, precio: 2800 },
-              { id: "cfg-7", bebida: "LATTE", activa: false, gramosCafe: 1.5, gramosLeche: 15.0, gramosCocoa: 0, precio: 2600 },
-            ],
-          },
-        ],
-      },
-      {
-        id: "cli-demo-02",
-        razonSocial: "Edificio Corporativo Torre 100",
-        sede: "Chicó Norte",
-        direccion: "Cra 15 # 100-11",
-        contacto: "Ing. Mauricio Gómez",
-        whatsapp: "+573108884433",
-        maquinas: [
-          {
-            id: "maq-demo-02",
-            codigoSerial: "MAQ-COL-2024-112",
-            modelo: "Necta Brio 3 Tolvas",
-            ubicacion: "Lobby Recepción",
-            numeroProductos: 6,
-            rutaNombre: "Ruta 2 - Oficinas Calle 72",
-            configuraciones: [
-              { id: "cfg-8", bebida: "CAFE_LARGO_TINTO", activa: true, gramosCafe: 2.0, gramosLeche: 0, gramosCocoa: 0, precio: 2000 },
-              { id: "cfg-9", bebida: "CAFE_CORTO_EXPRESO", activa: true, gramosCafe: 2.0, gramosLeche: 0, gramosCocoa: 0, precio: 2000 },
-              { id: "cfg-10", bebida: "CAPUCHINO_TRADICIONAL", activa: true, gramosCafe: 2.0, gramosLeche: 12.0, gramosCocoa: 0, precio: 3000 },
-              { id: "cfg-11", bebida: "CAPUCHINO_VAINILLA", activa: true, gramosCafe: 1.8, gramosLeche: 12.0, gramosCocoa: 0, precio: 3000 },
-              { id: "cfg-12", bebida: "MOCACCINO", activa: true, gramosCafe: 1.8, gramosLeche: 8.0, gramosCocoa: 10.0, precio: 3200 },
-              { id: "cfg-13", bebida: "LATTE", activa: true, gramosCafe: 1.5, gramosLeche: 15.0, gramosCocoa: 0, precio: 3000 },
-              { id: "cfg-14", bebida: "CHOCOLATE_CHOCOMILK", activa: false, gramosCafe: 0, gramosLeche: 6.0, gramosCocoa: 16.0, precio: 2800 },
-            ],
-          },
-        ],
-      },
-    ],
-  };
-}
-
-function getMockRutas() {
-  return {
-    success: true,
-    data: [
-      {
-        id: "ruta-01",
-        nombre: "Ruta 1 - Clínicas y Hospitales Norte",
-        descripcion: "Atención de puntos hospitalarios y clínicas",
-        diasFrecuencia: "LUN-MIE-VIE",
-        operadorId: "operador-default-1",
-        operadorNombre: "Carlos Mendoza",
-        maquinas: [
-          { id: "maq-demo-01", codigoSerial: "MAQ-COL-2024-089", clienteNombre: "Hospital Universitario San José", sede: "Sede Centro", ubicacion: "Cafetería Principal Piso 2" },
-        ],
-      },
-      {
-        id: "ruta-02",
-        nombre: "Ruta 2 - Oficinas Calle 72",
-        descripcion: "Centros empresariales y entidades financieras",
-        diasFrecuencia: "MAR-JUE-SAB",
-        operadorId: "operador-2",
-        operadorNombre: "Javier Morales",
-        maquinas: [
-          { id: "maq-demo-02", codigoSerial: "MAQ-COL-2024-112", clienteNombre: "Edificio Corporativo Torre 100", sede: "Chicó Norte", ubicacion: "Lobby Recepción" },
-        ],
-      },
-    ],
-  };
 }

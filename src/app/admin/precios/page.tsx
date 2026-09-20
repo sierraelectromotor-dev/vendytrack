@@ -43,43 +43,7 @@ export default async function PreciosPage() {
     console.warn("[PreciosPage] Fallback a datos mock:", error);
   }
 
-  // Fallback demo si no hay datos en DB
-  if (maquinasData.length === 0) {
-    maquinasData = [
-      {
-        id: "maq-demo-01",
-        codigoSerial: "MAQ-COL-2024-089",
-        modelo: "Bianchi Soluble 4 Tolvas",
-        clienteNombre: "Hospital Universitario San José",
-        sede: "Sede Centro",
-        precios: {
-          CAPUCHINO_VAINILLA: 2500,
-          CAPUCHINO_TRADICIONAL: 2500,
-          MOCACCINO: 2800,
-          CAFE_CORTO_EXPRESO: 1800,
-          CAFE_LARGO_TINTO: 1800,
-          LATTE: 2600,
-          CHOCOLATE_CHOCOMILK: 2400,
-        },
-      },
-      {
-        id: "maq-demo-02",
-        codigoSerial: "MAQ-COL-2024-112",
-        modelo: "Necta Brio 3 Tolvas",
-        clienteNombre: "Edificio Corporativo Torre 100",
-        sede: "Chicó Norte",
-        precios: {
-          CAPUCHINO_VAINILLA: 3000,
-          CAPUCHINO_TRADICIONAL: 3000,
-          MOCACCINO: 3200,
-          CAFE_CORTO_EXPRESO: 2000,
-          CAFE_LARGO_TINTO: 2000,
-          LATTE: 3000,
-          CHOCOLATE_CHOCOMILK: 2800,
-        },
-      },
-    ];
-  }
+
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import prisma from "./prisma";
 import crypto from "crypto";
 
 export interface SessionUser {
@@ -10,46 +9,47 @@ export interface SessionUser {
   clienteId?: string | null;
 }
 
-const SESSION_COOKIE_NAME = "vendytrack_session";
-const SESSION_SECRET = process.env.NEXTAUTH_SECRET || "vendytrack_secret_salt_2026";
-
-// Usuarios de prueba predeterminados para desarrollo y demostración inmediata
-export const USUARIOS_DEMO: Record<
-  string,
-  { password: string; user: SessionUser }
-> = {
-  "admin@vendytrack.com": {
-    password: "admin123",
-    user: {
-      id: "usr-admin-01",
-      name: "Andrés Restrepo",
-      email: "admin@vendytrack.com",
-      rol: "ADMIN",
-    },
-  },
-  "carlos.operador@vendytrack.com": {
-    password: "ruta123",
-    user: {
-      id: "operador-default-1",
-      name: "Carlos Mendoza",
-      email: "carlos.operador@vendytrack.com",
-      rol: "OPERADOR_RUTA",
-    },
-  },
-  "cliente@sanitas.com": {
-    password: "cliente123",
-    user: {
-      id: "usr-cliente-01",
-      name: "Dra. Claudia Pérez",
-      email: "cliente@sanitas.com",
-      rol: "CLIENTE",
-      clienteId: "cli-demo-01",
-    },
-  },
-};
+export const SESSION_COOKIE_NAME = "vendytrack_session";
+export const SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  process.env.NEXTAUTH_SECRET ||
+  process.env.AUTH_SECRET ||
+  "vendytrack_secure_session_key_2026_prod";
 
 /**
- * Cifra un payload de sesión simple en Base64 con firma HMAC.
+ * Genera un hash criptográfico scrypt con sal aleatoria de 16 bytes.
+ */
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+/**
+ * Verifica una contraseña contra un hash scrypt (con compatibilidad para texto plano previo).
+ */
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash || !password) return false;
+
+  // Si la contraseña almacenada aún no tiene formato de sal (migración de texto plano)
+  if (!storedHash.includes(":")) {
+    return password === storedHash;
+  }
+
+  const [salt, hash] = storedHash.split(":");
+  if (!salt || !hash) return false;
+
+  try {
+    const keyBuffer = Buffer.from(hash, "hex");
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cifra un payload de sesión en Base64 con firma HMAC-SHA256.
  */
 export function signSession(user: SessionUser): string {
   const payload = Buffer.from(JSON.stringify(user)).toString("base64");
@@ -73,7 +73,10 @@ export function verifySession(token: string): SessionUser | null {
       .update(payload)
       .digest("hex");
 
-    if (signature !== expectedSignature) {
+    const sigBuf = Buffer.from(signature, "hex");
+    const expBuf = Buffer.from(expectedSignature, "hex");
+
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return null;
     }
 
@@ -96,7 +99,29 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 }
 
 /**
- * Inicia sesión creando la cookie HTTP-only.
+ * Guardia de autorización: Exige que exista un usuario autenticado.
+ */
+export async function requireUser(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("No autorizado: Se requiere iniciar sesión.");
+  }
+  return user;
+}
+
+/**
+ * Guardia de autorización: Exige que el usuario tenga rol ADMIN.
+ */
+export async function requireAdmin(): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user || user.rol !== "ADMIN") {
+    throw new Error("Acceso denegado: Se requieren privilegios de Administrador.");
+  }
+  return user;
+}
+
+/**
+ * Inicia sesión creando la cookie HTTP-only y segura.
  */
 export async function setSessionCookie(user: SessionUser) {
   const cookieStore = cookies();
@@ -108,12 +133,6 @@ export async function setSessionCookie(user: SessionUser) {
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 días
-  });
-
-  // Cookie accesible para el cliente / middleware
-  cookieStore.set("vendytrack_role", user.rol, {
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
   });
 }
 
