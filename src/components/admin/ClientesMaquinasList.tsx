@@ -60,6 +60,8 @@ export interface MaquinaItem {
   clienteNombre?: string | null;
   rutaId?: string | null;
   rutaNombre: string;
+  latitud?: number | null;
+  longitud?: number | null;
   activa?: boolean;
   liquidadaHoy?: boolean;
   ultimoConsecutivo?: number | null;
@@ -75,6 +77,8 @@ export interface ClienteItem {
   contacto: string;
   whatsapp: string;
   activo?: boolean;
+  latitud?: number | null;
+  longitud?: number | null;
   maquinas: MaquinaItem[];
 }
 
@@ -372,6 +376,15 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                     <span className="text-[11px] text-stone-500 block">
                       {m.ubicacion || "En Bodega / Taller"}
                     </span>
+                    {m.latitud !== null && m.latitud !== undefined && m.longitud !== null && m.longitud !== undefined && (
+                      <span
+                        className="text-[10px] font-mono text-rose-700 dark:text-rose-400 font-semibold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-md border border-rose-200/60 dark:border-rose-800/60 inline-flex items-center gap-1 mt-1"
+                        title={`GPS Bodega: ${m.latitud}, ${m.longitud}`}
+                      >
+                        <MapPin className="w-2.5 h-2.5 text-rose-600" />
+                        <span>GPS {m.latitud.toFixed(4)}, {m.longitud.toFixed(4)}</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
@@ -574,6 +587,31 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                                 <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-800/60">
                                   {m.rutaNombre}
                                 </span>
+                                {m.latitud !== null && m.latitud !== undefined && m.longitud !== null && m.longitud !== undefined ? (
+                                  <span
+                                    className="text-[10px] font-mono text-rose-700 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-md border border-rose-200/60 dark:border-rose-800/60 flex items-center gap-1"
+                                    title={`GPS Propio de la Máquina: ${m.latitud}, ${m.longitud}`}
+                                  >
+                                    <MapPin className="w-2.5 h-2.5 text-rose-600" />
+                                    <span>GPS {m.latitud.toFixed(3)}, {m.longitud.toFixed(3)}</span>
+                                  </span>
+                                ) : c.latitud !== null && c.latitud !== undefined && c.longitud !== null && c.longitud !== undefined ? (
+                                  <span
+                                    className="text-[10px] text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2 py-0.5 rounded-md border border-stone-200/60 dark:border-stone-700 flex items-center gap-1"
+                                    title={`Hereda GPS de la sede del cliente: ${c.latitud}, ${c.longitud}`}
+                                  >
+                                    <MapPin className="w-2.5 h-2.5 text-stone-400" />
+                                    <span>GPS Cliente</span>
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-800/60 flex items-center gap-1"
+                                    title="Sin coordenadas GPS asignadas"
+                                  >
+                                    <MapPin className="w-2.5 h-2.5 text-amber-500" />
+                                    <span>Sin GPS</span>
+                                  </span>
+                                )}
                               </div>
                               <span className="text-[11px] text-stone-500 block mt-1">
                                 {m.modelo} • <span className="text-stone-700 dark:text-stone-300 font-medium">{m.ubicacion}</span>
@@ -728,6 +766,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             id: c.id,
             razonSocial: c.razonSocial,
             sede: c.sede,
+            latitud: c.latitud,
+            longitud: c.longitud,
           }))}
           rutas={rutas}
           insumos={insumos}
@@ -784,6 +824,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             numeroProductos: selectedMaquinaParaEditar.numeroProductos,
             clienteId: selectedMaquinaParaEditar.clienteId,
             rutaId: selectedMaquinaParaEditar.rutaId,
+            latitud: selectedMaquinaParaEditar.latitud,
+            longitud: selectedMaquinaParaEditar.longitud,
             liquidadaHoy: selectedMaquinaParaEditar.liquidadaHoy,
             ultimoConsecutivo: selectedMaquinaParaEditar.ultimoConsecutivo,
             configuraciones: selectedMaquinaParaEditar.configuraciones.map((c) => ({
@@ -796,6 +838,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             id: c.id,
             razonSocial: c.razonSocial,
             sede: c.sede,
+            latitud: c.latitud,
+            longitud: c.longitud,
           }))}
           rutas={rutas}
           insumos={insumos}

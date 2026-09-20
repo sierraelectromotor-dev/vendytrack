@@ -674,6 +674,8 @@ export async function obtenerClientes() {
         codigoSerial: m.codigoSerial,
         modelo: m.modelo,
         ubicacion: m.ubicacion,
+        latitud: (m as any).latitud ?? null,
+        longitud: (m as any).longitud ?? null,
         numeroProductos: m.numeroProductos,
         contadorActual: (m as any).contadorActual ?? 0,
         clienteId: m.clienteId,
@@ -832,6 +834,10 @@ export async function crearMaquina(formData: FormData) {
     const numeroProductos = parseInt(formData.get("numeroProductos")?.toString() || "4", 10);
     const contadorActual = parseInt(formData.get("contadorActual")?.toString() || "0", 10);
     const bebidasJson = formData.get("bebidasJson")?.toString();
+    const latitudRaw = formData.get("latitud")?.toString()?.trim();
+    const longitudRaw = formData.get("longitud")?.toString()?.trim();
+    const latitud = latitudRaw && !isNaN(parseFloat(latitudRaw)) ? parseFloat(latitudRaw) : null;
+    const longitud = longitudRaw && !isNaN(parseFloat(longitudRaw)) ? parseFloat(longitudRaw) : null;
 
     if (!codigoSerial || !modelo) {
       return { success: false, error: "Código serial y modelo son obligatorios" };
@@ -847,6 +853,8 @@ export async function crearMaquina(formData: FormData) {
         clienteId,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
         activa: clienteId !== null,
+        latitud,
+        longitud,
       } as any,
     });
 
@@ -931,6 +939,8 @@ export async function actualizarMaquina(data: {
   ubicacion: string;
   clienteId?: string | null;
   rutaId?: string | null;
+  latitud?: number | null;
+  longitud?: number | null;
   numeroProductos: number;
   bebidas?: Array<{
     bebida: string;
@@ -947,7 +957,7 @@ export async function actualizarMaquina(data: {
   await requireAdmin();
 
   try {
-    const { id, codigoSerial, modelo, ubicacion, clienteId, rutaId, numeroProductos, bebidas } = data;
+    const { id, codigoSerial, modelo, ubicacion, clienteId, rutaId, latitud, longitud, numeroProductos, bebidas } = data;
 
     if (!id || !codigoSerial || !modelo) {
       return { success: false, error: "Datos incompletos de la máquina" };
@@ -966,6 +976,8 @@ export async function actualizarMaquina(data: {
         activa: finalActiva,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
         numeroProductos,
+        latitud: typeof latitud === "number" ? latitud : latitud === null ? null : undefined,
+        longitud: typeof longitud === "number" ? longitud : longitud === null ? null : undefined,
       } as any,
     });
 
@@ -1296,8 +1308,9 @@ export async function obtenerRutas() {
           clienteNombre: m.cliente?.razonSocial || "En Bodega",
           sede: m.cliente?.sede || "Bodega",
           direccion: m.cliente?.direccion || "Calle 13 # 68-35",
-          latitud: m.cliente?.latitud ?? null,
-          longitud: m.cliente?.longitud ?? null,
+          latitud: (m as any).latitud ?? m.cliente?.latitud ?? null,
+          longitud: (m as any).longitud ?? m.cliente?.longitud ?? null,
+          tieneGpsPropio: (m as any).latitud !== null && (m as any).latitud !== undefined,
           ubicacion: m.ubicacion,
         })),
       })),

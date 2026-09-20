@@ -25,6 +25,7 @@ export interface MaquinaPunto {
   ubicacion: string;
   latitud: number | null;
   longitud: number | null;
+  tieneGpsPropio?: boolean;
 }
 
 export interface RutaConPuntos {
@@ -242,6 +243,15 @@ export default function MapaRutas({ bodega, rutas }: MapaRutasProps) {
             <p style="margin: 0; font-size: 10px; color: #78716c;">📍 ${m.direccion}</p>
             <div style="margin-top: 6px; font-size: 10px; color: #1c1917; font-weight: 600;">
               ☕ Máquina: <span style="font-family: monospace;">${m.codigoSerial}</span>
+            </div>
+            <div style="margin-top: 3px; font-size: 9px; display: flex; align-items: center; gap: 4px;">
+              ${
+                m.tieneGpsPropio
+                  ? `<span style="background: #ffe4e6; color: #e11d48; padding: 1px 5px; border-radius: 4px; font-weight: bold;">📍 GPS Máquina</span> <span style="font-family: monospace; color: #44403c;">${pLat.toFixed(4)}, ${pLng.toFixed(4)}</span>`
+                  : m.latitud !== null
+                  ? `<span style="background: #f5f5f4; color: #78716c; padding: 1px 5px; border-radius: 4px;">📍 GPS Cliente</span> <span style="font-family: monospace; color: #44403c;">${pLat.toFixed(4)}, ${pLng.toFixed(4)}</span>`
+                  : `<span style="background: #fef3c7; color: #b45309; padding: 1px 5px; border-radius: 4px;">📍 Estimado</span>`
+              }
             </div>
             <div style="margin-top: 4px; font-size: 10px; color: #57534e;">
               👤 Rutero: <strong>${ruta.operadorNombre}</strong>

@@ -113,6 +113,8 @@ model Maquina {
   rutaId          String?
   ruta            Ruta?                  @relation(fields: [rutaId], references: [id], onDelete: SetNull)
   activa          Boolean                @default(true)
+  latitud         Float?
+  longitud        Float?
   precios         PrecioMaquina[]
   configuraciones ConfigBebidaMaquina[]
   liquidaciones   Liquidacion[]
