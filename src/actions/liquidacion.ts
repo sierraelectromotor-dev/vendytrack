@@ -166,6 +166,29 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     // 2. Validación estricta con Zod
     const validatedData = liquidacionFormSchema.parse(formData);
 
+    // 2.1 Verificar si la máquina ya fue liquidada hoy (bloqueo estricto contra reenvío)
+    const hoyInicio = new Date();
+    hoyInicio.setHours(0, 0, 0, 0);
+
+    const liqExistenteHoy = await prisma.liquidacion.findFirst({
+      where: {
+        maquinaId: validatedData.maquinaId,
+        fecha: { gte: hoyInicio },
+      },
+      select: { id: true, consecutivo: true },
+    });
+
+    if (liqExistenteHoy && currentUser.rol !== "ADMIN") {
+      const numLiq =
+        typeof liqExistenteHoy.consecutivo === "number"
+          ? `LIQ-${liqExistenteHoy.consecutivo.toString().padStart(4, "0")}`
+          : liqExistenteHoy.consecutivo;
+      return {
+        success: false,
+        error: `Esta máquina ya fue liquidada hoy (${numLiq}). No se puede editar o reenviar hasta que un administrador reasigne la ruta.`,
+      };
+    }
+
     // 3. Subida de evidencias a Vercel Blob (foto es opcional)
     const [fotoContadorUrl, uploadedFirmaUrl] = await Promise.all([
       validatedData.fotoContadorBase64 && validatedData.fotoContadorBase64.length > 50

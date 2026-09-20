@@ -53,6 +53,7 @@ export default async function HomePage() {
           liquidaciones: {
             orderBy: { fecha: "desc" },
             take: 1,
+            include: { detalles: true },
           },
         },
         orderBy: { codigoSerial: "asc" },
@@ -74,6 +75,7 @@ export default async function HomePage() {
           liquidaciones: {
             orderBy: { fecha: "desc" },
             take: 1,
+            include: { detalles: true },
           },
         },
         orderBy: { codigoSerial: "asc" },
@@ -87,17 +89,26 @@ export default async function HomePage() {
   const maquinasRuta = maquinas.map((m) => {
     const ultimaLiq = m.liquidaciones[0];
     const liquidadaHoy = ultimaLiq ? new Date(ultimaLiq.fecha) >= inicioHoy : false;
+    const ultimoTotalTazas = ultimaLiq
+      ? ultimaLiq.detalles.reduce((acc: number, d: any) => acc + (d.tazasNetas || 0), 0)
+      : null;
+
     return {
       id: m.id,
       codigoSerial: m.codigoSerial,
       modelo: m.modelo,
       ubicacion: m.ubicacion,
       clienteNombre: m.cliente ? `${m.cliente.razonSocial} (${m.cliente.sede})` : "Sin Cliente",
+      clienteWhatsapp: m.cliente?.whatsapp || null,
       rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
       liquidadaHoy,
+      ultimaLiquidacionId: ultimaLiq ? ultimaLiq.id : null,
       ultimaLiquidacionFecha: ultimaLiq ? ultimaLiq.fecha.toISOString() : null,
       ultimoTotalFacturado: ultimaLiq ? Number(ultimaLiq.totalFacturado) : null,
       ultimoConsecutivo: ultimaLiq ? ultimaLiq.consecutivo : null,
+      ultimoMetodoPago: ultimaLiq ? (ultimaLiq.metodoPago as "EFECTIVO" | "TRANSFERENCIA") : null,
+      ultimoTotalTazas,
+      ultimoReciboPdfUrl: ultimaLiq?.reciboPdfUrl || (ultimaLiq ? `/api/liquidaciones/${ultimaLiq.id}/pdf` : null),
     };
   });
 
