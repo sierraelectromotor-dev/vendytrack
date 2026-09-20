@@ -250,22 +250,56 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       const idVasos = insumosMap.get("INS-VASOS-7OZ");
       const idMezcl = insumosMap.get("INS-MEZCLADORES");
 
+      // Descuento de Premezclas e Insumos por ranura configurada
+      const descuentosPorInsumo = new Map<string, number>();
       let totalGramosCafe = 0;
       let totalGramosLeche = 0;
       let totalGramosCocoa = 0;
 
       for (const linea of lineasCalculadas) {
         const cfg = configMap.get(linea.bebida);
-        const gramosCafe = cfg ? Number(cfg.gramosCafe) : 2.0;
-        const gramosLeche = cfg ? Number(cfg.gramosLeche) : 0;
-        const gramosCocoa = cfg ? Number(cfg.gramosCocoa) : 0;
+        const insumoId = (cfg as any)?.insumoId;
+        const gramosPorTaza = Number((cfg as any)?.gramosPorTaza || 0);
 
-        totalGramosCafe += linea.tazasNetas * gramosCafe;
-        totalGramosLeche += linea.tazasNetas * gramosLeche;
-        totalGramosCocoa += linea.tazasNetas * gramosCocoa;
+        if (insumoId && gramosPorTaza > 0) {
+          const gramosTotales = linea.tazasNetas * gramosPorTaza;
+          const previo = descuentosPorInsumo.get(insumoId) || 0;
+          descuentosPorInsumo.set(insumoId, previo + gramosTotales);
+        } else {
+          // Retrocompatibilidad: Si no tiene premezcla asignada, usar café/leche/cocoa
+          const gramosCafe = cfg ? Number(cfg.gramosCafe) : 2.0;
+          const gramosLeche = cfg ? Number(cfg.gramosLeche) : 0;
+          const gramosCocoa = cfg ? Number(cfg.gramosCocoa) : 0;
+
+          totalGramosCafe += linea.tazasNetas * gramosCafe;
+          totalGramosLeche += linea.tazasNetas * gramosLeche;
+          totalGramosCocoa += linea.tazasNetas * gramosCocoa;
+        }
       }
 
-      // Descontar Café (convertir gramos a kg si la unidad de insumo es KG)
+      // 1. Descontar Premezclas configuradas directamente
+      for (const [insumoId, gramosTotales] of Array.from(descuentosPorInsumo.entries())) {
+        const insumoTarget = insumosList.find((i) => i.id === insumoId);
+        if (!insumoTarget || gramosTotales <= 0) continue;
+
+        const cantDescontar = insumoTarget.unidadMedida === "KG" ? gramosTotales / 1000 : gramosTotales;
+
+        await tx.insumo.update({
+          where: { id: insumoId },
+          data: { stockActual: { decrement: cantDescontar } },
+        });
+
+        await tx.movimientoInventario.create({
+          data: {
+            insumoId,
+            tipo: "SALIDA_TEORICA_LIQUIDACION",
+            cantidad: cantDescontar,
+            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial} (${insumoTarget.nombre})`,
+          },
+        });
+      }
+
+      // 2. Descontar Café fallback (si hubo ranuras sin premezcla explícita)
       if (idCafe && totalGramosCafe > 0) {
         const cantKg = totalGramosCafe / 1000;
         await tx.insumo.update({
@@ -282,7 +316,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         });
       }
 
-      // Descontar Leche
+      // Descontar Leche fallback
       if (idLeche && totalGramosLeche > 0) {
         const cantKg = totalGramosLeche / 1000;
         await tx.insumo.update({
@@ -299,7 +333,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         });
       }
 
-      // Descontar Cocoa
+      // Descontar Cocoa fallback
       if (idCocoa && totalGramosCocoa > 0) {
         const cantKg = totalGramosCocoa / 1000;
         await tx.insumo.update({

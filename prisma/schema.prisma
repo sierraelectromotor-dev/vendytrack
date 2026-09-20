@@ -102,8 +102,8 @@ model Maquina {
   modelo          String                 // ej. Soluble 3/4 Tolvas Bianchi
   numeroProductos Int                    @default(4) // Número de selecciones/productos de la máquina
   contadorActual  Int                    @default(0) // Contador actual / inicial de la máquina
-  clienteId       String
-  cliente         Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  clienteId       String?
+  cliente         Cliente?               @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   rutaId          String?
   ruta            Ruta?                  @relation(fields: [rutaId], references: [id], onDelete: SetNull)
   activa          Boolean                @default(true)
@@ -125,15 +125,19 @@ model ConfigBebidaMaquina {
   bebida          TipoBebida
   activa          Boolean     @default(true)
   contadorInicial Int         @default(0) // Contador inicial de esta bebida en la máquina
-  gramosCafe      Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de café soluble por taza
-  gramosLeche     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de leche en polvo por taza
-  gramosCocoa     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de cocoa por taza
+  insumoId        String?
+  insumo          Insumo?     @relation(fields: [insumoId], references: [id], onDelete: SetNull)
+  gramosPorTaza   Decimal?    @default(0) @db.Decimal(6, 2)  // Gramos de la premezcla/insumo por taza
+  gramosCafe      Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de café soluble por taza (retrocompatibilidad)
+  gramosLeche     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de leche en polvo por taza (retrocompatibilidad)
+  gramosCocoa     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de cocoa por taza (retrocompatibilidad)
   precio          Decimal     @default(2500) @db.Decimal(10, 2)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
   @@unique([maquinaId, bebida])
   @@index([maquinaId])
+  @@index([insumoId])
 }
 
 model PrecioMaquina {
@@ -203,9 +207,10 @@ model Insumo {
   stockActual   Decimal                @default(0) @db.Decimal(10, 3)
   stockMinimo   Decimal                @default(0) @db.Decimal(10, 3)
   costoPromedio Decimal                @default(0) @db.Decimal(10, 2)
-  recetas       RecetaInsumo[]
-  movimientos   MovimientoInventario[]
-  createdAt     DateTime               @default(now())
+  recetas         RecetaInsumo[]
+  movimientos     MovimientoInventario[]
+  configuraciones ConfigBebidaMaquina[]
+  createdAt       DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
   @@index([codigo])

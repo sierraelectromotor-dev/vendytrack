@@ -21,17 +21,32 @@ import {
   Route,
   Activity,
   X,
+  Package,
+  ArrowRightLeft,
+  Warehouse,
 } from "lucide-react";
-import {
-  CalibracionMaquinaModal,
-  BebidaConfigItem,
-} from "./CalibracionMaquinaModal";
 import { EditarClienteModal } from "./EditarClienteModal";
 import { EditarMaquinaModal } from "./EditarMaquinaModal";
 import { CrearClienteModal } from "./CrearClienteModal";
 import { CrearMaquinaModal } from "./CrearMaquinaModal";
+import { AsignarMaquinaModal } from "./AsignarMaquinaModal";
 import { eliminarMaquina } from "@/actions/admin";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
+
+export interface BebidaConfigItem {
+  id?: string;
+  bebida: string;
+  activa: boolean;
+  contadorInicial: number;
+  ultimoContador?: number;
+  insumoId?: string | null;
+  insumoNombre?: string | null;
+  gramosPorTaza?: number;
+  precio: number;
+  gramosCafe?: number;
+  gramosLeche?: number;
+  gramosCocoa?: number;
+}
 
 export interface MaquinaItem {
   id: string;
@@ -40,9 +55,11 @@ export interface MaquinaItem {
   ubicacion: string;
   numeroProductos: number;
   contadorActual: number;
-  clienteId: string;
+  clienteId?: string | null;
+  clienteNombre?: string | null;
   rutaId?: string | null;
   rutaNombre: string;
+  activa?: boolean;
   configuraciones: BebidaConfigItem[];
 }
 
@@ -57,21 +74,32 @@ export interface ClienteItem {
   maquinas: MaquinaItem[];
 }
 
+export interface InsumoOption {
+  id: string;
+  nombre: string;
+  codigo: string;
+  unidadMedida: string;
+}
+
 interface ClientesMaquinasListProps {
   clientes: ClienteItem[];
+  maquinasSinAsignar?: MaquinaItem[];
   rutas?: Array<{ id: string; nombre: string }>;
+  insumos?: InsumoOption[];
 }
 
 export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
   clientes,
+  maquinasSinAsignar = [],
   rutas = [],
+  insumos = [],
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isCrearClienteOpen, setIsCrearClienteOpen] = useState(false);
   const [crearMaquinaClienteId, setCrearMaquinaClienteId] = useState<string | null>(null);
   const [isCrearMaquinaOpen, setIsCrearMaquinaOpen] = useState(false);
 
-  const [selectedMaquina, setSelectedMaquina] = useState<MaquinaItem | null>(null);
+  const [maquinaParaAsignar, setMaquinaParaAsignar] = useState<MaquinaItem | null>(null);
   const [selectedClienteParaEditar, setSelectedClienteParaEditar] = useState<ClienteItem | null>(null);
   const [selectedMaquinaParaEditar, setSelectedMaquinaParaEditar] = useState<MaquinaItem | null>(null);
   const [maquinaAEliminar, setMaquinaAEliminar] = useState<MaquinaItem | null>(null);
@@ -81,12 +109,12 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
   // Estadísticas KPI
   const stats = useMemo(() => {
     const totalClientes = clientes.length;
-    let totalMaquinas = 0;
+    let maquinasAsignadas = 0;
     let totalSelecciones = 0;
     const rutasUnicas = new Set<string>();
 
     clientes.forEach((c) => {
-      totalMaquinas += c.maquinas.length;
+      maquinasAsignadas += c.maquinas.length;
       c.maquinas.forEach((m) => {
         totalSelecciones += m.numeroProductos;
         if (m.rutaId) rutasUnicas.add(m.rutaId);
@@ -95,11 +123,12 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
 
     return {
       totalClientes,
-      totalMaquinas,
+      maquinasAsignadas,
+      maquinasEnBodega: maquinasSinAsignar.length,
       totalSelecciones,
       totalRutas: rutasUnicas.size,
     };
-  }, [clientes]);
+  }, [clientes, maquinasSinAsignar]);
 
   // Filtro en tiempo real
   const filteredClientes = useMemo(() => {
@@ -126,6 +155,18 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
     });
   }, [clientes, searchTerm]);
 
+  // Filtro de máquinas en bodega
+  const filteredMaquinasBodega = useMemo(() => {
+    if (!searchTerm.trim()) return maquinasSinAsignar;
+    const term = searchTerm.toLowerCase();
+    return maquinasSinAsignar.filter(
+      (m) =>
+        m.codigoSerial.toLowerCase().includes(term) ||
+        m.modelo.toLowerCase().includes(term) ||
+        m.ubicacion.toLowerCase().includes(term)
+    );
+  }, [maquinasSinAsignar, searchTerm]);
+
   const handleEliminarMaquina = async (accion: "eliminar" | "desasignar") => {
     if (!maquinaAEliminar) return;
     setIsDeletingMaquina(true);
@@ -139,7 +180,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
         tipo: "success",
         texto:
           accion === "desasignar"
-            ? `Máquina ${maquinaAEliminar.codigoSerial} desasignada e inactivada.`
+            ? `Máquina ${maquinaAEliminar.codigoSerial} desasignada y enviada a Bodega.`
             : `Máquina ${maquinaAEliminar.codigoSerial} eliminada permanentemente.`,
       });
       setMaquinaAEliminar(null);
@@ -206,24 +247,24 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
           </div>
           <div>
             <span className="text-[11px] font-semibold text-stone-500 block">
-              Máquinas Vending
+              Máquinas en Clientes
             </span>
             <span className="text-lg font-black text-stone-900 dark:text-white">
-              {stats.totalMaquinas}
+              {stats.maquinasAsignadas}
             </span>
           </div>
         </div>
 
         <div className="bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800 rounded-2xl p-4 shadow-xs flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <Route className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Warehouse className="w-5 h-5" />
           </div>
           <div>
             <span className="text-[11px] font-semibold text-stone-500 block">
-              Rutas Activas
+              Máquinas en Bodega
             </span>
             <span className="text-lg font-black text-stone-900 dark:text-white">
-              {stats.totalRutas}
+              {stats.maquinasEnBodega}
             </span>
           </div>
         </div>
@@ -288,7 +329,104 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
         </div>
       </div>
 
-      {/* Grid de Clientes y sus Máquinas */}
+      {/* SECCIÓN 1: Máquinas Disponibles en Bodega / Sin Asignar (si existen) */}
+      {filteredMaquinasBodega.length > 0 && (
+        <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-800/60 rounded-3xl p-5 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center justify-center">
+                <Warehouse className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                  <span>Máquinas en Bodega / Sin Asignar</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/70 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
+                    {filteredMaquinasBodega.length} disponibles
+                  </span>
+                </h3>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-400">
+                  Equipos desasociados o listos para ser instalados en nuevos puntos de venta
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {filteredMaquinasBodega.map((m) => (
+              <div
+                key={m.id}
+                className="bg-white dark:bg-stone-900 border border-amber-200/70 dark:border-stone-800 rounded-2xl p-4 shadow-xs space-y-3 hover:border-amber-400 dark:hover:border-amber-700 transition-all"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-mono font-bold text-stone-900 dark:text-white text-xs bg-stone-100 dark:bg-stone-800 px-2 py-0.5 rounded-md border border-stone-200 dark:border-stone-700">
+                      {m.codigoSerial}
+                    </span>
+                    <span className="text-xs font-bold text-stone-800 dark:text-stone-200 block mt-1">
+                      {m.modelo}
+                    </span>
+                    <span className="text-[11px] text-stone-500 block">
+                      {m.ubicacion || "En Bodega / Taller"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMaquinaParaEditar(m)}
+                      className="p-1.5 bg-stone-50 hover:bg-stone-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 rounded-lg shadow-2xs transition-colors"
+                      title="Editar configuración o premezclas"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMaquinaAEliminar(m)}
+                      className="p-1.5 bg-stone-50 hover:bg-rose-50 dark:bg-stone-800 dark:hover:bg-rose-950/40 text-stone-400 hover:text-rose-600 rounded-lg shadow-2xs transition-colors"
+                      title="Eliminar permanentemente"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Píldoras con Premezclas y Contadores */}
+                <div className="flex flex-wrap gap-1 pt-1 border-t border-stone-100 dark:border-stone-800">
+                  {m.configuraciones
+                    .filter((c) => c.activa)
+                    .map((cfg) => {
+                      const bInfo = BEBIDAS_CATALOGO.find((b) => b.id === cfg.bebida);
+                      return (
+                        <span
+                          key={cfg.bebida}
+                          className="inline-flex items-center gap-1 text-[10px] bg-stone-50 dark:bg-stone-800/80 px-2 py-0.5 rounded-lg border border-stone-200/70 dark:border-stone-700 text-stone-700 dark:text-stone-300"
+                        >
+                          <span>{bInfo?.icono || "☕"}</span>
+                          <span className="font-medium">{bInfo?.nombre || cfg.bebida}</span>
+                          <span className="text-[9px] font-mono font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-stone-900 px-1 rounded">
+                            {cfg.ultimoContador ?? cfg.contadorInicial ?? 0}
+                          </span>
+                        </span>
+                      );
+                    })}
+                </div>
+
+                {/* Botón Asignar a Cliente */}
+                <button
+                  type="button"
+                  onClick={() => setMaquinaParaAsignar(m)}
+                  className="w-full py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center justify-center gap-1.5"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>Asignar a un Cliente</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECCIÓN 2: Grid de Clientes y sus Máquinas */}
       {filteredClientes.length === 0 ? (
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl p-10 text-center space-y-3 shadow-xs">
           <div className="w-12 h-12 rounded-2xl bg-stone-100 dark:bg-stone-800 text-stone-400 flex items-center justify-center mx-auto">
@@ -400,7 +538,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                 </div>
               </div>
 
-              {/* Listado de Máquinas Asociadas */}
+              {/* Listado de Máquinas Asociadas al Cliente */}
               <div className="pt-2 border-t border-stone-100 dark:border-stone-800 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
@@ -439,29 +577,29 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                             </div>
 
                             <div className="flex items-center gap-1 shrink-0">
-                              {/* Botón Editar Máquina */}
+                              {/* Botón Editar / Reasignar */}
                               <button
                                 type="button"
                                 onClick={() => setSelectedMaquinaParaEditar(m)}
                                 className="p-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-coffee-500 dark:hover:border-amber-400 text-stone-700 dark:text-stone-300 rounded-xl shadow-2xs transition-colors"
-                                title="Editar máquina, reasignar cliente o calibrar bebidas y contadores"
+                                title="Editar máquina, reasignar a otro cliente o calibrar premezclas"
                               >
                                 <Pencil className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
                               </button>
 
-                              {/* Botón Borrar / Desasignar */}
+                              {/* Botón Desasignar / Enviar a Bodega */}
                               <button
                                 type="button"
                                 onClick={() => setMaquinaAEliminar(m)}
                                 className="p-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 hover:border-rose-400 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl shadow-2xs transition-colors"
-                                title="Desasignar o eliminar máquina"
+                                title="Desasignar de este cliente o eliminar"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
 
-                          {/* Píldoras de Bebidas Activas con su Contador Inicial */}
+                          {/* Píldoras de Bebidas con Premezcla y Contador */}
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {activeConfigs.length > 0 ? (
                               activeConfigs.map((cfg) => {
@@ -478,11 +616,19 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                                     <span className="text-[9px] text-stone-400 font-mono">
                                       (${cfg.precio.toLocaleString("es-CO")})
                                     </span>
+                                    {cfg.insumoNombre && (
+                                      <span
+                                        className="text-[9px] text-stone-500 font-medium bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded"
+                                        title={`Premezcla: ${cfg.insumoNombre} (${cfg.gramosPorTaza || 18}g)`}
+                                      >
+                                        {cfg.insumoNombre} ({cfg.gramosPorTaza || 18}g)
+                                      </span>
+                                    )}
                                     <span
                                       className="text-[9px] font-mono font-bold text-coffee-700 dark:text-amber-400 bg-coffee-50 dark:bg-stone-800 px-1.5 py-0.5 rounded-md border border-coffee-200/50 dark:border-stone-700"
-                                      title="Contador Inicial configurado para esta bebida"
+                                      title="Último Contador / Contador Inicial configurado"
                                     >
-                                      C.I: {cfg.contadorInicial?.toLocaleString("es-CO") ?? 0}
+                                      C: {(cfg.ultimoContador ?? cfg.contadorInicial ?? 0).toLocaleString("es-CO")}
                                     </span>
                                   </span>
                                 );
@@ -532,7 +678,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
         />
       )}
 
-      {/* Modal para Crear/Asociar Nueva Máquina */}
+      {/* Modal para Crear Nueva Máquina */}
       {(isCrearMaquinaOpen || crearMaquinaClienteId) && (
         <CrearMaquinaModal
           clientes={clientes.map((c) => ({
@@ -541,6 +687,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             sede: c.sede,
           }))}
           rutas={rutas}
+          insumos={insumos}
           clientePreseleccionadoId={crearMaquinaClienteId || undefined}
           onClose={() => {
             setIsCrearMaquinaOpen(false);
@@ -549,21 +696,29 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
           onSuccess={() => {
             setMensaje({
               tipo: "success",
-              texto: "Máquina y bebidas configuradas con éxito.",
+              texto: "Máquina y premezclas configuradas con éxito.",
             });
           }}
         />
       )}
 
-      {/* Modal de Calibración de Gramajes y Bebidas */}
-      {selectedMaquina && (
-        <CalibracionMaquinaModal
-          maquinaId={selectedMaquina.id}
-          codigoSerial={selectedMaquina.codigoSerial}
-          modelo={selectedMaquina.modelo}
-          numeroProductos={selectedMaquina.numeroProductos}
-          configuracionesIniciales={selectedMaquina.configuraciones}
-          onClose={() => setSelectedMaquina(null)}
+      {/* Modal para Asignar Máquina desde Bodega a Cliente */}
+      {maquinaParaAsignar && (
+        <AsignarMaquinaModal
+          maquina={maquinaParaAsignar}
+          clientes={clientes.map((c) => ({
+            id: c.id,
+            razonSocial: c.razonSocial,
+            sede: c.sede,
+          }))}
+          rutas={rutas}
+          onClose={() => setMaquinaParaAsignar(null)}
+          onSuccess={() => {
+            setMensaje({
+              tipo: "success",
+              texto: `Máquina ${maquinaParaAsignar.codigoSerial} asignada exitosamente al cliente.`,
+            });
+          }}
         />
       )}
 
@@ -575,7 +730,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
         />
       )}
 
-      {/* Modal de Edición de Máquina */}
+      {/* Modal de Edición / Reasignación de Máquina */}
       {selectedMaquinaParaEditar && (
         <EditarMaquinaModal
           maquina={{
@@ -589,6 +744,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             configuraciones: selectedMaquinaParaEditar.configuraciones.map((c) => ({
               ...c,
               contadorInicial: c.contadorInicial ?? 0,
+              ultimoContador: c.ultimoContador ?? c.contadorInicial ?? 0,
             })),
           }}
           clientes={clientes.map((c) => ({
@@ -597,11 +753,12 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             sede: c.sede,
           }))}
           rutas={rutas}
+          insumos={insumos}
           onClose={() => setSelectedMaquinaParaEditar(null)}
           onSuccess={() => {
             setMensaje({
               tipo: "success",
-              texto: "Máquina y contadores actualizados correctamente.",
+              texto: "Máquina y calibración actualizadas correctamente.",
             });
           }}
         />
@@ -611,8 +768,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
       {maquinaAEliminar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center mx-auto">
+              <Warehouse className="w-6 h-6" />
             </div>
 
             <div className="text-center space-y-1">
@@ -621,7 +778,6 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
               </h3>
               <p className="text-xs text-stone-500">
                 Máquina <strong className="text-stone-800 dark:text-stone-200">{maquinaAEliminar.codigoSerial}</strong> ({maquinaAEliminar.modelo}).
-                Puedes retirarla del cliente o eliminarla completamente.
               </p>
             </div>
 
@@ -633,7 +789,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                 className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isDeletingMaquina && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Desasignar e Inactivar Máquina</span>
+                <span>Desasignar y Enviar a Bodega</span>
               </button>
 
               <button
@@ -643,7 +799,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                 className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isDeletingMaquina && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Eliminar Máquina Permanentemente</span>
+                <span>Eliminar Permanentemente</span>
               </button>
 
               <button

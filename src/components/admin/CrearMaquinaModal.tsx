@@ -10,6 +10,7 @@ import {
   Loader2,
   Hash,
   Sparkles,
+  Package,
   PlusCircle,
   Layers,
   MapPin,
@@ -29,9 +30,17 @@ interface RutaOption {
   nombre: string;
 }
 
+export interface InsumoOption {
+  id: string;
+  nombre: string;
+  codigo: string;
+  unidadMedida: string;
+}
+
 interface CrearMaquinaModalProps {
   clientes: ClienteOption[];
   rutas: RutaOption[];
+  insumos?: InsumoOption[];
   clientePreseleccionadoId?: string;
   onClose: () => void;
   onSuccess?: () => void;
@@ -39,36 +48,36 @@ interface CrearMaquinaModalProps {
 
 interface SlotBebida {
   bebida: string;
+  insumoId: string | null;
+  gramosPorTaza: number;
   contadorInicial: number;
   precio: number;
-  gramosCafe: number;
-  gramosLeche: number;
-  gramosCocoa: number;
 }
 
-const DEFAULT_RECIPES: Record<
+const DEFAULT_PREMIX_RECIPES: Record<
   string,
-  { precio: number; cafe: number; leche: number; cocoa: number }
+  { precio: number; gramos: number; matchCode: string }
 > = {
-  CAFE_LARGO_TINTO: { precio: 1800, cafe: 2.2, leche: 0, cocoa: 0 },
-  CAFE_CORTO_EXPRESO: { precio: 1800, cafe: 2.0, leche: 0, cocoa: 0 },
-  CAPUCHINO_TRADICIONAL: { precio: 2500, cafe: 2.0, leche: 12.0, cocoa: 0 },
-  CHOCOLATE_CHOCOMILK: { precio: 2400, cafe: 0, leche: 6.0, cocoa: 16.0 },
-  CAPUCHINO_VAINILLA: { precio: 2500, cafe: 1.8, leche: 12.0, cocoa: 0 },
-  MOCACCINO: { precio: 2800, cafe: 1.8, leche: 8.0, cocoa: 10.0 },
-  LATTE: { precio: 2600, cafe: 1.5, leche: 15.0, cocoa: 0 },
+  CAFE_LARGO_TINTO: { precio: 1800, gramos: 2.2, matchCode: "INS-CAFE-SOLUBLE" },
+  CAFE_CORTO_EXPRESO: { precio: 1800, gramos: 2.0, matchCode: "INS-CAFE-SOLUBLE" },
+  CAPUCHINO_TRADICIONAL: { precio: 2500, gramos: 18.0, matchCode: "INS-PREM-CAPUCHINO-TRAD" },
+  CHOCOLATE_CHOCOMILK: { precio: 2400, gramos: 20.0, matchCode: "INS-PREM-CHOCOLATE" },
+  CAPUCHINO_VAINILLA: { precio: 2500, gramos: 18.0, matchCode: "INS-PREM-CAPUCHINO-VAINILLA" },
+  MOCACCINO: { precio: 2800, gramos: 18.0, matchCode: "INS-PREM-MOCACCINO" },
+  LATTE: { precio: 2600, gramos: 18.0, matchCode: "INS-LECHE-POLVO" },
 };
 
 export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
   clientes,
   rutas,
+  insumos = [],
   clientePreseleccionadoId,
   onClose,
   onSuccess,
 }) => {
   const [isPending, startTransition] = useTransition();
   const [selectedClienteId, setSelectedClienteId] = useState<string>(
-    clientePreseleccionadoId || (clientes[0]?.id ?? "")
+    clientePreseleccionadoId || (clientes[0]?.id ?? "none")
   );
   const [numProductos, setNumProductos] = useState<number>(4);
   const [slots, setSlots] = useState<SlotBebida[]>([]);
@@ -76,6 +85,30 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
     tipo: "success" | "error";
     texto: string;
   } | null>(null);
+
+  // Helper para buscar insumo por código preferido o nombre
+  const findInsumoIdForBebida = (bebidaKey: string): string | null => {
+    const rec = DEFAULT_PREMIX_RECIPES[bebidaKey];
+    if (rec && insumos.length > 0) {
+      const matchByCode = insumos.find((i) => i.codigo === rec.matchCode);
+      if (matchByCode) return matchByCode.id;
+
+      // Buscar por coincidencia parcial de nombre
+      if (bebidaKey.includes("CAPUCHINO")) {
+        const matchCap = insumos.find((i) => i.nombre.toLowerCase().includes("capuchino"));
+        if (matchCap) return matchCap.id;
+      }
+      if (bebidaKey.includes("CHOCOLATE")) {
+        const matchChoc = insumos.find((i) => i.nombre.toLowerCase().includes("chocolate") || i.nombre.toLowerCase().includes("cocoa"));
+        if (matchChoc) return matchChoc.id;
+      }
+      if (bebidaKey.includes("CAFE")) {
+        const matchCafe = insumos.find((i) => i.nombre.toLowerCase().includes("café") || i.nombre.toLowerCase().includes("cafe"));
+        if (matchCafe) return matchCafe.id;
+      }
+    }
+    return insumos[0]?.id || null;
+  };
 
   // Inicializar ranuras según numProductos
   useEffect(() => {
@@ -96,44 +129,42 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
           newSlots.push(prev[i]);
         } else {
           const bebidaKey = defaultBebidasOrder[i % defaultBebidasOrder.length];
-          const rec =
-            DEFAULT_RECIPES[bebidaKey] || {
-              precio: 2500,
-              cafe: 2.0,
-              leche: 0,
-              cocoa: 0,
-            };
+          const rec = DEFAULT_PREMIX_RECIPES[bebidaKey] || {
+            precio: 2500,
+            gramos: 18.0,
+            matchCode: "",
+          };
+          const matchedInsumoId = findInsumoIdForBebida(bebidaKey);
+
           newSlots.push({
             bebida: bebidaKey,
+            insumoId: matchedInsumoId,
+            gramosPorTaza: rec.gramos,
             contadorInicial: 0,
             precio: rec.precio,
-            gramosCafe: rec.cafe,
-            gramosLeche: rec.leche,
-            gramosCocoa: rec.cocoa,
           });
         }
       }
       return newSlots;
     });
-  }, [numProductos]);
+  }, [numProductos, insumos]);
 
   const handleBebidaChange = (index: number, newBebida: string) => {
-    const rec =
-      DEFAULT_RECIPES[newBebida] || {
-        precio: 2500,
-        cafe: 2.0,
-        leche: 0,
-        cocoa: 0,
-      };
+    const rec = DEFAULT_PREMIX_RECIPES[newBebida] || {
+      precio: 2500,
+      gramos: 18.0,
+      matchCode: "",
+    };
+    const matchedInsumoId = findInsumoIdForBebida(newBebida);
+
     setSlots((prev) => {
       const updated = [...prev];
       updated[index] = {
         ...updated[index],
         bebida: newBebida,
+        insumoId: matchedInsumoId,
+        gramosPorTaza: rec.gramos,
         precio: rec.precio,
-        gramosCafe: rec.cafe,
-        gramosLeche: rec.leche,
-        gramosCocoa: rec.cocoa,
       };
       return updated;
     });
@@ -142,7 +173,7 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
   const handleSlotFieldChange = (
     index: number,
     field: keyof SlotBebida,
-    value: number
+    value: any
   ) => {
     setSlots((prev) => {
       const updated = [...prev];
@@ -193,10 +224,10 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-stone-900 dark:text-white text-base">
-                Asociar Máquina a Cliente y Configurar Bebidas
+                Registrar Máquina y Configurar Premezclas
               </h3>
               <p className="text-xs text-stone-500">
-                Define serial, ubicación, contadores iniciales y recetas en un solo paso
+                Define premezclas por contenedor/ranura, contadores iniciales y calibración en un solo paso
               </p>
             </div>
           </div>
@@ -238,15 +269,15 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                  Cliente Asignado *
+                  Cliente Asignado
                 </label>
                 <select
                   name="clienteId"
-                  required
                   value={selectedClienteId}
                   onChange={(e) => setSelectedClienteId(e.target.value)}
                   className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
                 >
+                  <option value="none">-- Dejar en Bodega (Sin Asignar) --</option>
                   {clientes.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.razonSocial} ({c.sede})
@@ -276,20 +307,20 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                   type="text"
                   name="modelo"
                   required
-                  placeholder="ej. Bianchi BVM 951"
+                  placeholder="ej. Bianchi BVM 951 Soluble"
                   className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
                 />
               </div>
 
               <div>
                 <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                  Ubicación en Local *
+                  Ubicación en Local
                 </label>
                 <input
                   type="text"
                   name="ubicacion"
-                  required
-                  placeholder="ej. Piso 2 Cafetería"
+                  placeholder={selectedClienteId === "none" ? "En Bodega / Taller" : "ej. Piso 2 Cafetería"}
+                  defaultValue={selectedClienteId === "none" ? "En Bodega / Taller" : "Piso 1 Principal"}
                   className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
                 />
               </div>
@@ -331,15 +362,15 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
             </div>
           </div>
 
-          {/* Sección 2: Configuración de Ranuras de Bebidas (Cuadrícula Espaciosa) */}
+          {/* Sección 2: Configuración de Ranuras con Premezclas */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="font-bold text-stone-900 dark:text-white flex items-center gap-2 text-xs">
                 <Sliders className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
-                Configuración de Bebidas y Contadores Iniciales ({slots.length} ranuras)
+                Configuración de Premezclas y Contadores ({slots.length} ranuras)
               </h4>
               <span className="text-[11px] text-stone-500">
-                Cada ranura tiene su propio sabor, contador inicial y calibración
+                Selecciona la premezcla de bodega y su gramaje por taza
               </span>
             </div>
 
@@ -368,9 +399,9 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                       </span>
                     </div>
 
-                    {/* Sabor y Contador Inicial */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div className="sm:col-span-1">
+                    {/* Fila 1: Sabor de Bebida y Premezcla de Bodega */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
                         <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1">
                           Sabor / Bebida
                         </label>
@@ -388,11 +419,62 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                       </div>
 
                       <div>
+                        <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1 flex items-center gap-1">
+                          <Package className="w-3 h-3 text-coffee-600 dark:text-amber-400" />
+                          Premezcla / Insumo
+                        </label>
+                        <select
+                          value={slot.insumoId || ""}
+                          onChange={(e) =>
+                            handleSlotFieldChange(idx, "insumoId", e.target.value || null)
+                          }
+                          className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 text-xs outline-none focus:border-coffee-600"
+                        >
+                          <option value="">Sin Premezcla Asignada</option>
+                          {insumos.map((i) => (
+                            <option key={i.id} value={i.id}>
+                              {i.nombre} ({i.unidadMedida})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Fila 2: Gramaje, Contador Inicial y Precio */}
+                    <div className="grid grid-cols-3 gap-2.5 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1">
+                          Gramaje (g) *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            required
+                            value={slot.gramosPorTaza}
+                            onChange={(e) =>
+                              handleSlotFieldChange(
+                                idx,
+                                "gramosPorTaza",
+                                parseFloat(e.target.value || "0")
+                              )
+                            }
+                            placeholder="18"
+                            className="w-full pr-6 pl-2.5 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-bold text-stone-900 dark:text-white outline-none focus:border-coffee-600"
+                          />
+                          <span className="text-[10px] text-stone-400 absolute right-2 top-1/2 -translate-y-1/2">
+                            g
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
                         <label className="text-[10px] font-bold text-stone-900 dark:text-white block mb-1">
                           Contador Inicial *
                         </label>
                         <div className="relative">
-                          <Hash className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <Hash className="w-3 h-3 text-stone-400 absolute left-2 top-1/2 -translate-y-1/2" />
                           <input
                             type="number"
                             min="0"
@@ -405,15 +487,15 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                                 parseInt(e.target.value || "0", 10)
                               )
                             }
-                            placeholder="ej. 0"
-                            className="w-full pl-7 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 text-xs font-mono font-black text-stone-900 dark:text-white outline-none focus:border-coffee-600"
+                            placeholder="0"
+                            className="w-full pl-6 pr-2 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-black text-stone-900 dark:text-white outline-none focus:border-coffee-600"
                           />
                         </div>
                       </div>
 
                       <div>
                         <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1">
-                          Precio Unitario ($ COP)
+                          Precio ($ COP)
                         </label>
                         <input
                           type="number"
@@ -428,74 +510,8 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                               parseFloat(e.target.value || "0")
                             )
                           }
-                          className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 text-xs font-mono font-bold text-coffee-700 dark:text-amber-300 outline-none"
+                          className="w-full px-2 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-bold text-coffee-700 dark:text-amber-300 outline-none"
                         />
-                      </div>
-                    </div>
-
-                    {/* Gramajes de Receta */}
-                    <div className="pt-2 border-t border-stone-200/50 dark:border-stone-700/50">
-                      <span className="text-[10px] font-semibold text-stone-500 block mb-1.5">
-                        Calibración Inicial de Gramajes:
-                      </span>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-white dark:bg-stone-900 p-1.5 rounded-xl border border-stone-200/60 dark:border-stone-700/60">
-                          <label className="text-[10px] text-stone-500 block">
-                            Café (g):
-                          </label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={slot.gramosCafe}
-                            onChange={(e) =>
-                              handleSlotFieldChange(
-                                idx,
-                                "gramosCafe",
-                                parseFloat(e.target.value || "0")
-                              )
-                            }
-                            className="w-full bg-transparent font-mono font-bold text-xs outline-none dark:text-white mt-0.5"
-                          />
-                        </div>
-                        <div className="bg-white dark:bg-stone-900 p-1.5 rounded-xl border border-stone-200/60 dark:border-stone-700/60">
-                          <label className="text-[10px] text-stone-500 block">
-                            Leche (g):
-                          </label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={slot.gramosLeche}
-                            onChange={(e) =>
-                              handleSlotFieldChange(
-                                idx,
-                                "gramosLeche",
-                                parseFloat(e.target.value || "0")
-                              )
-                            }
-                            className="w-full bg-transparent font-mono font-bold text-xs outline-none dark:text-white mt-0.5"
-                          />
-                        </div>
-                        <div className="bg-white dark:bg-stone-900 p-1.5 rounded-xl border border-stone-200/60 dark:border-stone-700/60">
-                          <label className="text-[10px] text-stone-500 block">
-                            Cocoa (g):
-                          </label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            value={slot.gramosCocoa}
-                            onChange={(e) =>
-                              handleSlotFieldChange(
-                                idx,
-                                "gramosCocoa",
-                                parseFloat(e.target.value || "0")
-                              )
-                            }
-                            className="w-full bg-transparent font-mono font-bold text-xs outline-none dark:text-white mt-0.5"
-                          />
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -522,10 +538,10 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
               {isPending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Guardando Máquina y Calibración...</span>
+                  <span>Guardando Máquina y Premezclas...</span>
                 </>
               ) : (
-                <span>Guardar Máquina y Contadores Iniciales</span>
+                <span>Guardar Máquina y Calibración</span>
               )}
             </button>
           </div>

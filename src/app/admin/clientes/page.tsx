@@ -12,6 +12,8 @@ export default async function ClientesPage() {
   ]);
 
   const clientes = clientesRes.data || [];
+  const maquinasSinAsignar = (clientesRes as any).maquinasSinAsignar || [];
+  const insumos = (clientesRes as any).insumos || [];
   const rutas = rutasRes.data || [];
 
   return (
@@ -28,7 +30,12 @@ export default async function ClientesPage() {
       </div>
 
       {/* Vista Principal Interactiva: KPIs, Buscador, Modales y Tarjetas */}
-      <ClientesMaquinasList clientes={clientes} rutas={rutas} />
+      <ClientesMaquinasList
+        clientes={clientes}
+        maquinasSinAsignar={maquinasSinAsignar}
+        rutas={rutas}
+        insumos={insumos}
+      />
     </div>
   );
 }

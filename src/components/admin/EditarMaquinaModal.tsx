@@ -1,8 +1,18 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { X, Coffee, Sliders, CheckCircle2, AlertCircle, Loader2, Building2 } from "lucide-react";
-import { BEBIDAS_CATALOGO, TipoBebidaEnum } from "@/types/liquidacion";
+import {
+  X,
+  Coffee,
+  Sliders,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Building2,
+  Package,
+  Hash,
+} from "lucide-react";
+import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 import { actualizarMaquina } from "@/actions/admin";
 
 interface ClienteOption {
@@ -16,15 +26,26 @@ interface RutaOption {
   nombre: string;
 }
 
+export interface InsumoOption {
+  id: string;
+  nombre: string;
+  codigo: string;
+  unidadMedida: string;
+}
+
 export interface BebidaConfigEdit {
   id?: string;
   bebida: string;
   activa: boolean;
   contadorInicial: number;
+  ultimoContador?: number;
   precio: number;
-  gramosCafe: number;
-  gramosLeche: number;
-  gramosCocoa: number;
+  insumoId?: string | null;
+  insumoNombre?: string | null;
+  gramosPorTaza?: number;
+  gramosCafe?: number;
+  gramosLeche?: number;
+  gramosCocoa?: number;
 }
 
 interface EditarMaquinaModalProps {
@@ -34,12 +55,13 @@ interface EditarMaquinaModalProps {
     modelo: string;
     ubicacion: string;
     numeroProductos: number;
-    clienteId: string;
+    clienteId?: string | null;
     rutaId?: string | null;
     configuraciones: BebidaConfigEdit[];
   };
   clientes: ClienteOption[];
   rutas: RutaOption[];
+  insumos?: InsumoOption[];
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -48,6 +70,7 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
   maquina,
   clientes,
   rutas,
+  insumos = [],
   onClose,
   onSuccess,
 }) => {
@@ -58,7 +81,7 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
   const [codigoSerial, setCodigoSerial] = useState(maquina.codigoSerial);
   const [modelo, setModelo] = useState(maquina.modelo);
   const [ubicacion, setUbicacion] = useState(maquina.ubicacion);
-  const [clienteId, setClienteId] = useState(maquina.clienteId);
+  const [clienteId, setClienteId] = useState(maquina.clienteId || "none");
   const [rutaId, setRutaId] = useState(maquina.rutaId || "none");
   const [numeroProductos, setNumeroProductos] = useState(maquina.numeroProductos);
 
@@ -69,7 +92,9 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
       if (existing) {
         return {
           ...existing,
-          contadorInicial: existing.contadorInicial ?? 0,
+          contadorInicial: existing.ultimoContador ?? existing.contadorInicial ?? 0,
+          insumoId: existing.insumoId || null,
+          gramosPorTaza: existing.gramosPorTaza ?? (existing.gramosCafe || 18.0),
         };
       }
       return {
@@ -77,9 +102,8 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
         activa: idx < maquina.numeroProductos,
         contadorInicial: 0,
         precio: 2500,
-        gramosCafe: 2.0,
-        gramosLeche: 0,
-        gramosCocoa: 0,
+        insumoId: insumos[0]?.id || null,
+        gramosPorTaza: 18.0,
       };
     });
   });
@@ -111,10 +135,17 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
         codigoSerial,
         modelo,
         ubicacion,
-        clienteId,
+        clienteId: clienteId === "none" ? null : clienteId,
         rutaId: rutaId === "none" ? null : rutaId,
         numeroProductos,
-        bebidas,
+        bebidas: bebidas.map((b) => ({
+          bebida: b.bebida,
+          activa: b.activa,
+          contadorInicial: b.contadorInicial,
+          precio: b.precio,
+          insumoId: b.insumoId || null,
+          gramosPorTaza: b.gramosPorTaza ?? 0,
+        })),
       });
 
       if (res.success) {
@@ -130,19 +161,19 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-950/40 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-coffee-100 dark:bg-amber-950/60 flex items-center justify-center text-coffee-700 dark:text-amber-400">
-              <Coffee className="w-4 h-4" />
+        <div className="flex items-center justify-between p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/90 dark:bg-stone-950/40 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-coffee-100 dark:bg-amber-950/60 flex items-center justify-center text-coffee-700 dark:text-amber-400">
+              <Coffee className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-stone-900 dark:text-white text-sm">
-                Editar Máquina y Contadores
+              <h3 className="font-bold text-stone-900 dark:text-white text-base">
+                Editar Máquina, Reasignar y Calibrar Premezclas
               </h3>
-              <p className="text-[11px] text-stone-500 font-mono">
+              <p className="text-xs text-stone-500 font-mono">
                 {maquina.codigoSerial} • {maquina.modelo}
               </p>
             </div>
@@ -150,14 +181,14 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
+            className="p-1.5 rounded-xl text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-xs">
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-red-600 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -168,211 +199,239 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
           {success && (
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>¡Máquina y contadores actualizados correctamente!</span>
+              <span>¡Máquina y calibración actualizadas con éxito!</span>
             </div>
           )}
 
-          {/* Datos del Equipo y Reasignación */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Cliente Asignado *
-              </label>
-              <select
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value)}
-                required
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
-              >
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.razonSocial} ({c.sede})
-                  </option>
-                ))}
-              </select>
+          {/* Datos del Equipo y Reasignación de Cliente */}
+          <div className="bg-stone-50/80 dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-700/80 rounded-2xl p-4 space-y-3.5">
+            <h4 className="font-bold text-stone-900 dark:text-white flex items-center gap-2 text-xs">
+              <Building2 className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
+              Asignación y Datos Principales
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Cliente Asignado (Reasignar)
+                </label>
+                <select
+                  value={clienteId}
+                  onChange={(e) => setClienteId(e.target.value)}
+                  className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
+                >
+                  <option value="none">-- En Bodega (Sin Asignar) --</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.razonSocial} ({c.sede})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-stone-400 block mt-0.5">
+                  Puedes cambiar el cliente o enviar la máquina a Bodega
+                </span>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Código Serial / Placa *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={codigoSerial}
+                  onChange={(e) => setCodigoSerial(e.target.value)}
+                  className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white font-mono"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Código Serial / Placa *
-              </label>
-              <input
-                type="text"
-                required
-                value={codigoSerial}
-                onChange={(e) => setCodigoSerial(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 font-mono"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Modelo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={modelo}
+                  onChange={(e) => setModelo(e.target.value)}
+                  className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Ubicación en Local
+                </label>
+                <input
+                  type="text"
+                  value={ubicacion}
+                  onChange={(e) => setUbicacion(e.target.value)}
+                  className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                  Ruta Asignada
+                </label>
+                <select
+                  value={rutaId}
+                  onChange={(e) => setRutaId(e.target.value)}
+                  className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white"
+                >
+                  <option value="none">Sin Ruta Asignada</option>
+                  {rutas.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Modelo *
-              </label>
-              <input
-                type="text"
-                required
-                value={modelo}
-                onChange={(e) => setModelo(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
-              />
-            </div>
-
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Ubicación en Local *
-              </label>
-              <input
-                type="text"
-                required
-                value={ubicacion}
-                onChange={(e) => setUbicacion(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
-              />
-            </div>
-
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Ruta Asignada
-              </label>
-              <select
-                value={rutaId}
-                onChange={(e) => setRutaId(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
-              >
-                <option value="none">Sin Ruta Asignada</option>
-                {rutas.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Calibración de Bebidas y Contadores */}
-          <div className="pt-3 border-t border-stone-100 dark:border-stone-800 space-y-2.5">
+          {/* Configuración de Bebidas y Premezclas */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="font-bold text-stone-900 dark:text-white flex items-center gap-1.5">
+              <h4 className="font-bold text-stone-900 dark:text-white flex items-center gap-2 text-xs">
                 <Sliders className="w-3.5 h-3.5 text-coffee-600 dark:text-amber-400" />
-                Contadores Iniciales y Calibración de Bebidas
+                Configuración de Bebidas, Premezclas y Contadores
               </h4>
-              <span className="text-[11px] text-stone-400">
-                Activa o desactiva las bebidas de la máquina
+              <span className="text-[11px] text-stone-500">
+                Ajusta los contadores, la premezcla por tolva y el gramaje
               </span>
             </div>
 
-            <div className="space-y-2">
-              {bebidas.map((cfg, idx) => {
-                const info = BEBIDAS_CATALOGO.find((b) => b.id === cfg.bebida);
+            <div className="space-y-3">
+              {bebidas.map((b, idx) => {
+                const cat = BEBIDAS_CATALOGO.find((c) => c.id === b.bebida);
 
                 return (
                   <div
-                    key={cfg.bebida}
-                    className={`p-3 rounded-xl border transition-all ${
-                      cfg.activa
-                        ? "bg-stone-50 dark:bg-stone-800/80 border-stone-200 dark:border-stone-700"
-                        : "bg-stone-100/40 dark:bg-stone-900/40 border-stone-200/40 dark:border-stone-800/40 opacity-60"
+                    key={b.bebida}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      b.activa
+                        ? "bg-stone-50/80 dark:bg-stone-800/60 border-stone-200/80 dark:border-stone-700/80 shadow-2xs"
+                        : "bg-stone-100/40 dark:bg-stone-900/30 border-stone-200/40 dark:border-stone-800 opacity-60"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          id={`check-${cfg.bebida}`}
-                          checked={cfg.activa}
+                          id={`edit-activa-${idx}`}
+                          checked={b.activa}
                           onChange={() => handleBebidaToggle(idx)}
                           className="w-4 h-4 rounded text-coffee-600 focus:ring-coffee-500 border-stone-300"
                         />
                         <label
-                          htmlFor={`check-${cfg.bebida}`}
-                          className="font-bold text-stone-900 dark:text-white cursor-pointer select-none"
+                          htmlFor={`edit-activa-${idx}`}
+                          className="font-bold text-stone-900 dark:text-white text-xs cursor-pointer select-none flex items-center gap-1.5"
                         >
-                          {info?.icono} {info?.nombre || cfg.bebida}
+                          <span>{cat?.icono || "☕"}</span>
+                          <span>{cat?.nombre || b.bebida}</span>
                         </label>
                       </div>
-                      <span className="text-[10px] font-semibold text-stone-400 uppercase">
-                        {cfg.activa ? "Activa en Máquina" : "Desactivada"}
+
+                      <span className="text-[10px] text-stone-400 font-mono">
+                        {b.activa ? "Habilitada" : "Deshabilitada"}
                       </span>
                     </div>
 
-                    {cfg.activa && (
-                      <div className="space-y-2 pt-1 border-t border-stone-200/50 dark:border-stone-700/50">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] font-semibold text-stone-700 dark:text-stone-300 block mb-0.5">
-                              Contador Inicial (Lectura física) *
-                            </label>
+                    {b.activa && (
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-stone-200/50 dark:border-stone-700/50">
+                        {/* Selector de Premezcla */}
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1 flex items-center gap-1">
+                            <Package className="w-3 h-3 text-coffee-600 dark:text-amber-400" />
+                            Premezcla / Insumo
+                          </label>
+                          <select
+                            value={b.insumoId || ""}
+                            onChange={(e) =>
+                              handleFieldChange(idx, "insumoId", e.target.value || null)
+                            }
+                            className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 text-xs outline-none focus:border-coffee-600"
+                          >
+                            <option value="">Sin Premezcla Asignada</option>
+                            {insumos.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.nombre} ({i.unidadMedida})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Gramaje */}
+                        <div>
+                          <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1">
+                            Gramaje (g)
+                          </label>
+                          <div className="relative">
                             <input
                               type="number"
+                              step="0.1"
                               min="0"
-                              value={cfg.contadorInicial}
+                              value={b.gramosPorTaza ?? 18}
                               onChange={(e) =>
-                                handleFieldChange(idx, "contadorInicial", parseInt(e.target.value || "0", 10))
+                                handleFieldChange(
+                                  idx,
+                                  "gramosPorTaza",
+                                  parseFloat(e.target.value || "0")
+                                )
                               }
-                              className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 text-xs font-mono font-bold text-stone-900 dark:text-white outline-none focus:border-coffee-600"
+                              className="w-full pr-6 pl-2.5 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-bold text-stone-900 dark:text-white outline-none focus:border-coffee-600"
                             />
+                            <span className="text-[10px] text-stone-400 absolute right-2 top-1/2 -translate-y-1/2">
+                              g
+                            </span>
                           </div>
-                          <div>
-                            <label className="text-[10px] font-semibold text-stone-500 block mb-0.5">
-                              Precio de Venta ($ COP)
-                            </label>
+                        </div>
+
+                        {/* Contador Inicial */}
+                        <div>
+                          <label className="text-[10px] font-bold text-stone-900 dark:text-white block mb-1">
+                            Contador
+                          </label>
+                          <div className="relative">
+                            <Hash className="w-3 h-3 text-stone-400 absolute left-2 top-1/2 -translate-y-1/2" />
                             <input
                               type="number"
                               min="0"
-                              step="100"
-                              value={cfg.precio}
+                              value={b.contadorInicial}
                               onChange={(e) =>
-                                handleFieldChange(idx, "precio", parseFloat(e.target.value || "0"))
+                                handleFieldChange(
+                                  idx,
+                                  "contadorInicial",
+                                  parseInt(e.target.value || "0", 10)
+                                )
                               }
-                              className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 text-xs font-mono font-semibold text-coffee-700 dark:text-amber-300 outline-none"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-black text-stone-900 dark:text-white outline-none focus:border-coffee-600"
                             />
                           </div>
                         </div>
 
-                        {/* Gramajes */}
-                        <div className="grid grid-cols-3 gap-2 text-[10px]">
-                          <div>
-                            <label className="text-stone-500 block">Café (g):</label>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              value={cfg.gramosCafe}
-                              onChange={(e) =>
-                                handleFieldChange(idx, "gramosCafe", parseFloat(e.target.value || "0"))
-                              }
-                              className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded p-1 font-mono outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-stone-500 block">Leche (g):</label>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              value={cfg.gramosLeche}
-                              onChange={(e) =>
-                                handleFieldChange(idx, "gramosLeche", parseFloat(e.target.value || "0"))
-                              }
-                              className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded p-1 font-mono outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-stone-500 block">Cocoa (g):</label>
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              value={cfg.gramosCocoa}
-                              onChange={(e) =>
-                                handleFieldChange(idx, "gramosCocoa", parseFloat(e.target.value || "0"))
-                              }
-                              className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded p-1 font-mono outline-none"
-                            />
-                          </div>
+                        {/* Precio Unitario */}
+                        <div className="sm:col-span-1">
+                          <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1">
+                            Precio ($ COP)
+                          </label>
+                          <input
+                            type="number"
+                            step="100"
+                            min="0"
+                            value={b.precio}
+                            onChange={(e) =>
+                              handleFieldChange(
+                                idx,
+                                "precio",
+                                parseFloat(e.target.value || "0")
+                              )
+                            }
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-mono font-bold text-coffee-700 dark:text-amber-300 outline-none"
+                          />
                         </div>
                       </div>
                     )}
@@ -382,25 +441,25 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
             </div>
           </div>
 
-          {/* Botones */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-stone-800 shrink-0">
+          {/* Footer */}
+          <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-stone-100 dark:border-stone-800">
             <button
               type="button"
               onClick={onClose}
               disabled={isPending}
-              className="py-2 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl transition-all"
+              className="py-2.5 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl transition-all"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isPending}
-              className="py-2 px-5 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+              className="py-2.5 px-6 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {isPending ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Guardando...</span>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Guardando Cambios...</span>
                 </>
               ) : (
                 <span>Guardar Cambios</span>

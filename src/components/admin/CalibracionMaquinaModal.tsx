@@ -19,6 +19,10 @@ export interface BebidaConfigItem {
   bebida: string;
   activa: boolean;
   contadorInicial?: number;
+  ultimoContador?: number;
+  insumoId?: string | null;
+  insumoNombre?: string | null;
+  gramosPorTaza?: number;
   gramosCafe: number;
   gramosLeche: number;
   gramosCocoa: number;

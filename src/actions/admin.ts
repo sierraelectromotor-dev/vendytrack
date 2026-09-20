@@ -283,6 +283,34 @@ export async function cargarInsumosEstandar() {
         costoPromedio: 42000,
       },
       {
+        codigo: "INS-PREM-CAPUCHINO-VAINILLA",
+        nombre: "Premezcla Capuchino Vainilla",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 26000,
+      },
+      {
+        codigo: "INS-PREM-CAPUCHINO-TRAD",
+        nombre: "Premezcla Capuchino Tradicional",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 26000,
+      },
+      {
+        codigo: "INS-PREM-MOCACCINO",
+        nombre: "Premezcla Mocaccino",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 27000,
+      },
+      {
+        codigo: "INS-PREM-CHOCOLATE",
+        nombre: "Premezcla Chocolate Vending",
+        unidadMedida: "KG" as UnidadMedida,
+        stockMinimo: 5,
+        costoPromedio: 24000,
+      },
+      {
         codigo: "INS-LECHE-POLVO",
         nombre: "Leche en Polvo Vending",
         unidadMedida: "KG" as UnidadMedida,
@@ -577,17 +605,94 @@ export async function obtenerClientes() {
   await requireAdmin();
 
   try {
-    const clientes = await prisma.cliente.findMany({
-      include: {
-        maquinas: {
-          include: {
-            ruta: true,
-            configuraciones: true,
+    const [clientes, maquinasSinAsignar, insumos] = await Promise.all([
+      prisma.cliente.findMany({
+        include: {
+          maquinas: {
+            where: {
+              activa: true,
+            },
+            include: {
+              ruta: true,
+              configuraciones: true,
+              liquidaciones: {
+                orderBy: { fecha: "desc" },
+                take: 1,
+                include: { detalles: true },
+              },
+            },
+            orderBy: { codigoSerial: "asc" },
           },
         },
-      },
-      orderBy: { razonSocial: "asc" },
-    });
+        orderBy: { razonSocial: "asc" },
+      }),
+      prisma.maquina.findMany({
+        where: {
+          OR: [
+            { clienteId: null as any },
+            { activa: false },
+          ],
+        } as any,
+        include: {
+          cliente: true,
+          ruta: true,
+          configuraciones: true,
+          liquidaciones: {
+            orderBy: { fecha: "desc" },
+            take: 1,
+            include: { detalles: true },
+          },
+        },
+        orderBy: { codigoSerial: "asc" },
+      }),
+      prisma.insumo.findMany({
+        orderBy: { nombre: "asc" },
+      }),
+    ]);
+
+    const insumosMap = new Map(insumos.map((i) => [i.id, i.nombre]));
+
+    const mapMaquina = (m: any) => {
+      const ultimaLiq = m.liquidaciones?.[0];
+      const mapaUltimosContadores: Record<string, number> = {};
+      if (ultimaLiq && ultimaLiq.detalles) {
+        for (const d of ultimaLiq.detalles) {
+          mapaUltimosContadores[d.bebida] = d.contadorActual;
+        }
+      }
+
+      return {
+        id: m.id,
+        codigoSerial: m.codigoSerial,
+        modelo: m.modelo,
+        ubicacion: m.ubicacion,
+        numeroProductos: m.numeroProductos,
+        contadorActual: (m as any).contadorActual ?? 0,
+        clienteId: m.clienteId,
+        clienteNombre: m.cliente ? `${m.cliente.razonSocial} (${m.cliente.sede})` : null,
+        rutaId: m.rutaId,
+        rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
+        activa: m.activa,
+        configuraciones: m.configuraciones.map((cfg: any) => {
+          const ultimo = mapaUltimosContadores[cfg.bebida] ?? cfg.contadorInicial ?? 0;
+          const insumoId = (cfg as any).insumoId || null;
+          return {
+            id: cfg.id,
+            bebida: cfg.bebida,
+            activa: cfg.activa,
+            contadorInicial: (cfg as any).contadorInicial ?? 0,
+            ultimoContador: ultimo,
+            insumoId,
+            insumoNombre: insumoId ? insumosMap.get(insumoId) || null : null,
+            gramosPorTaza: Number((cfg as any).gramosPorTaza || 0),
+            gramosCafe: Number(cfg.gramosCafe || 0),
+            gramosLeche: Number(cfg.gramosLeche || 0),
+            gramosCocoa: Number(cfg.gramosCocoa || 0),
+            precio: Number(cfg.precio),
+          };
+        }),
+      };
+    };
 
     return {
       success: true,
@@ -599,27 +704,15 @@ export async function obtenerClientes() {
         contacto: c.contacto,
         whatsapp: c.whatsapp,
         activo: c.activo,
-        maquinas: c.maquinas.map((m) => ({
-          id: m.id,
-          codigoSerial: m.codigoSerial,
-          modelo: m.modelo,
-          ubicacion: m.ubicacion,
-          numeroProductos: m.numeroProductos,
-          contadorActual: (m as any).contadorActual ?? 0,
-          clienteId: m.clienteId,
-          rutaId: m.rutaId,
-          rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
-          configuraciones: m.configuraciones.map((cfg) => ({
-            id: cfg.id,
-            bebida: cfg.bebida,
-            activa: cfg.activa,
-            contadorInicial: (cfg as any).contadorInicial ?? 0,
-            gramosCafe: Number(cfg.gramosCafe),
-            gramosLeche: Number(cfg.gramosLeche),
-            gramosCocoa: Number(cfg.gramosCocoa),
-            precio: Number(cfg.precio),
-          })),
-        })),
+        maquinas: c.maquinas.map(mapMaquina),
+      })),
+      maquinasSinAsignar: maquinasSinAsignar.map(mapMaquina),
+      insumos: insumos.map((i) => ({
+        id: i.id,
+        nombre: i.nombre,
+        codigo: i.codigo,
+        unidadMedida: i.unidadMedida,
+        stockActual: Number(i.stockActual),
       })),
     };
   } catch (error) {
@@ -627,6 +720,8 @@ export async function obtenerClientes() {
     return {
       success: true,
       data: [],
+      maquinasSinAsignar: [],
+      insumos: [],
     };
   }
 }
@@ -705,15 +800,16 @@ export async function crearMaquina(formData: FormData) {
   try {
     const codigoSerial = formData.get("codigoSerial")?.toString().trim();
     const modelo = formData.get("modelo")?.toString().trim();
-    const ubicacion = formData.get("ubicacion")?.toString().trim();
-    const clienteId = formData.get("clienteId")?.toString();
+    const ubicacion = formData.get("ubicacion")?.toString().trim() || "En Bodega";
+    const rawClienteId = formData.get("clienteId")?.toString();
+    const clienteId = rawClienteId && rawClienteId !== "none" ? rawClienteId : null;
     const rutaId = formData.get("rutaId")?.toString() || null;
     const numeroProductos = parseInt(formData.get("numeroProductos")?.toString() || "4", 10);
     const contadorActual = parseInt(formData.get("contadorActual")?.toString() || "0", 10);
     const bebidasJson = formData.get("bebidasJson")?.toString();
 
-    if (!codigoSerial || !modelo || !ubicacion || !clienteId) {
-      return { success: false, error: "Datos de máquina incompletos" };
+    if (!codigoSerial || !modelo) {
+      return { success: false, error: "Código serial y modelo son obligatorios" };
     }
 
     const nuevaMaquina = await prisma.maquina.create({
@@ -725,13 +821,16 @@ export async function crearMaquina(formData: FormData) {
         contadorActual: isNaN(contadorActual) ? 0 : contadorActual,
         clienteId,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
-      },
+        activa: clienteId !== null,
+      } as any,
     });
 
     let configuracionesPersonalizadas: Array<{
       bebida: string;
       contadorInicial?: number;
       precio?: number;
+      insumoId?: string | null;
+      gramosPorTaza?: number;
       gramosCafe?: number;
       gramosLeche?: number;
       gramosCocoa?: number;
@@ -753,6 +852,8 @@ export async function crearMaquina(formData: FormData) {
             bebida: c.bebida as TipoBebida,
             activa: true,
             contadorInicial: c.contadorInicial ?? 0,
+            insumoId: c.insumoId || null,
+            gramosPorTaza: c.gramosPorTaza ?? 0,
             gramosCafe: c.gramosCafe ?? 0,
             gramosLeche: c.gramosLeche ?? 0,
             gramosCocoa: c.gramosCocoa ?? 0,
@@ -803,17 +904,19 @@ export async function actualizarMaquina(data: {
   codigoSerial: string;
   modelo: string;
   ubicacion: string;
-  clienteId: string;
+  clienteId?: string | null;
   rutaId?: string | null;
   numeroProductos: number;
   bebidas?: Array<{
     bebida: string;
     activa: boolean;
+    insumoId?: string | null;
+    gramosPorTaza?: number;
     contadorInicial?: number;
     precio: number;
-    gramosCafe: number;
-    gramosLeche: number;
-    gramosCocoa: number;
+    gramosCafe?: number;
+    gramosLeche?: number;
+    gramosCocoa?: number;
   }>;
 }) {
   await requireAdmin();
@@ -821,20 +924,24 @@ export async function actualizarMaquina(data: {
   try {
     const { id, codigoSerial, modelo, ubicacion, clienteId, rutaId, numeroProductos, bebidas } = data;
 
-    if (!id || !codigoSerial || !modelo || !ubicacion || !clienteId) {
+    if (!id || !codigoSerial || !modelo) {
       return { success: false, error: "Datos incompletos de la máquina" };
     }
+
+    const finalClienteId = clienteId && clienteId !== "none" ? clienteId : null;
+    const finalActiva = finalClienteId !== null;
 
     await prisma.maquina.update({
       where: { id },
       data: {
         codigoSerial,
         modelo,
-        ubicacion,
-        clienteId,
+        ubicacion: ubicacion || (finalClienteId ? "Ubicación Principal" : "En Bodega / Taller"),
+        clienteId: finalClienteId,
+        activa: finalActiva,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
         numeroProductos,
-      },
+      } as any,
     });
 
     if (bebidas && bebidas.length > 0) {
@@ -850,9 +957,11 @@ export async function actualizarMaquina(data: {
             activa: b.activa,
             contadorInicial: b.contadorInicial ?? 0,
             precio: b.precio,
-            gramosCafe: b.gramosCafe,
-            gramosLeche: b.gramosLeche,
-            gramosCocoa: b.gramosCocoa,
+            insumoId: b.insumoId || null,
+            gramosPorTaza: b.gramosPorTaza ?? 0,
+            gramosCafe: b.gramosCafe ?? 0,
+            gramosLeche: b.gramosLeche ?? 0,
+            gramosCocoa: b.gramosCocoa ?? 0,
           } as any,
           create: {
             maquinaId: id,
@@ -860,9 +969,11 @@ export async function actualizarMaquina(data: {
             activa: b.activa,
             contadorInicial: b.contadorInicial ?? 0,
             precio: b.precio,
-            gramosCafe: b.gramosCafe,
-            gramosLeche: b.gramosLeche,
-            gramosCocoa: b.gramosCocoa,
+            insumoId: b.insumoId || null,
+            gramosPorTaza: b.gramosPorTaza ?? 0,
+            gramosCafe: b.gramosCafe ?? 0,
+            gramosLeche: b.gramosLeche ?? 0,
+            gramosCocoa: b.gramosCocoa ?? 0,
           } as any,
         });
       }
@@ -876,6 +987,54 @@ export async function actualizarMaquina(data: {
   }
 }
 
+export async function asignarMaquinaACliente(data: {
+  maquinaId: string;
+  clienteId: string;
+  ubicacion: string;
+  rutaId?: string | null;
+  contadores?: Record<string, number>;
+}) {
+  await requireAdmin();
+
+  try {
+    const { maquinaId, clienteId, ubicacion, rutaId, contadores } = data;
+
+    if (!maquinaId || !clienteId) {
+      return { success: false, error: "Máquina y cliente son obligatorios" };
+    }
+
+    await prisma.maquina.update({
+      where: { id: maquinaId },
+      data: {
+        clienteId,
+        activa: true,
+        ubicacion: ubicacion || "Ubicación Principal",
+        rutaId: rutaId && rutaId !== "none" ? rutaId : null,
+      } as any,
+    });
+
+    if (contadores) {
+      for (const [bebida, contador] of Object.entries(contadores)) {
+        await prisma.configBebidaMaquina.updateMany({
+          where: {
+            maquinaId,
+            bebida: bebida as TipoBebida,
+          },
+          data: {
+            contadorInicial: contador,
+          } as any,
+        });
+      }
+    }
+
+    revalidatePath("/admin/clientes");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[asignarMaquinaACliente] Error:", error);
+    return { success: false, error: error.message || "Error al asignar la máquina al cliente" };
+  }
+}
+
 export async function eliminarMaquina(maquinaId: string, accion: "eliminar" | "desasignar") {
   await requireAdmin();
 
@@ -885,13 +1044,18 @@ export async function eliminarMaquina(maquinaId: string, accion: "eliminar" | "d
     }
 
     if (accion === "desasignar") {
-      // Inactivar la máquina para retirarla del circuito y de las rutas del cliente
+      // Enviar a bodega: desvincular cliente y ruta, marcar inactiva
       await prisma.maquina.update({
         where: { id: maquinaId },
-        data: { activa: false },
+        data: {
+          clienteId: null,
+          activa: false,
+          rutaId: null,
+          ubicacion: "En Bodega / Taller",
+        } as any,
       });
       revalidatePath("/admin/clientes");
-      return { success: true, message: "Máquina desasignada e inactivada con éxito" };
+      return { success: true, message: "Máquina desasignada y enviada a Bodega con éxito" };
     }
 
     // Acción eliminar permanentemente
