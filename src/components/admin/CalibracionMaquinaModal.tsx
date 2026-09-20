@@ -3,16 +3,14 @@
 import React, { useState } from "react";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 import { guardarCalibracionMaquina } from "@/actions/admin";
-import { formatCOP } from "@/lib/utils";
 import {
   Sliders,
   X,
   Save,
   Loader2,
   CheckCircle2,
-  Coffee,
-  Check,
   Scale,
+  Package,
 } from "lucide-react";
 
 export interface BebidaConfigItem {
@@ -23,10 +21,17 @@ export interface BebidaConfigItem {
   insumoId?: string | null;
   insumoNombre?: string | null;
   gramosPorTaza?: number;
-  gramosCafe: number;
-  gramosLeche: number;
-  gramosCocoa: number;
+  gramosCafe?: number;
+  gramosLeche?: number;
+  gramosCocoa?: number;
   precio: number;
+}
+
+export interface InsumoOption {
+  id: string;
+  nombre: string;
+  codigo: string;
+  unidadMedida: string;
 }
 
 interface CalibracionMaquinaModalProps {
@@ -35,6 +40,7 @@ interface CalibracionMaquinaModalProps {
   modelo: string;
   numeroProductos: number;
   configuracionesIniciales: BebidaConfigItem[];
+  insumos?: InsumoOption[];
   onClose: () => void;
 }
 
@@ -44,16 +50,17 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
   modelo,
   numeroProductos,
   configuracionesIniciales,
+  insumos = [],
   onClose,
 }) => {
-  const defaultConfigs: Record<string, { cafe: number; leche: number; cocoa: number; precio: number }> = {
-    CAFE_LARGO_TINTO: { cafe: 2.2, leche: 0, cocoa: 0, precio: 1800 },
-    CAFE_CORTO_EXPRESO: { cafe: 2.0, leche: 0, cocoa: 0, precio: 1800 },
-    CAPUCHINO_TRADICIONAL: { cafe: 2.0, leche: 12.0, cocoa: 0, precio: 2500 },
-    CHOCOLATE_CHOCOMILK: { cafe: 0, leche: 6.0, cocoa: 16.0, precio: 2400 },
-    CAPUCHINO_VAINILLA: { cafe: 1.8, leche: 12.0, cocoa: 0, precio: 2500 },
-    MOCACCINO: { cafe: 1.8, leche: 8.0, cocoa: 10.0, precio: 2800 },
-    LATTE: { cafe: 1.5, leche: 15.0, cocoa: 0, precio: 2600 },
+  const defaultGramajes: Record<string, { precio: number; gramos: number }> = {
+    CAFE_LARGO_TINTO: { precio: 1800, gramos: 2.2 },
+    CAFE_CORTO_EXPRESO: { precio: 1800, gramos: 2.0 },
+    CAPUCHINO_TRADICIONAL: { precio: 2500, gramos: 18.0 },
+    CHOCOLATE_CHOCOMILK: { precio: 2400, gramos: 20.0 },
+    CAPUCHINO_VAINILLA: { precio: 2500, gramos: 18.0 },
+    MOCACCINO: { precio: 2800, gramos: 18.0 },
+    LATTE: { precio: 2600, gramos: 18.0 },
   };
 
   const initialMap = new Map(configuracionesIniciales.map((c) => [c.bebida, c]));
@@ -61,14 +68,17 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
   const [configs, setConfigs] = useState<BebidaConfigItem[]>(
     BEBIDAS_CATALOGO.map((b, idx) => {
       const existing = initialMap.get(b.id);
-      const defaults = defaultConfigs[b.id] || { cafe: 2, leche: 10, cocoa: 0, precio: 2500 };
+      const defaults = defaultGramajes[b.id] || { precio: 2500, gramos: 18.0 };
 
       return {
         bebida: b.id,
         activa: existing ? existing.activa : idx < numeroProductos,
-        gramosCafe: existing ? existing.gramosCafe : defaults.cafe,
-        gramosLeche: existing ? existing.gramosLeche : defaults.leche,
-        gramosCocoa: existing ? existing.gramosCocoa : defaults.cocoa,
+        insumoId: existing?.insumoId || null,
+        insumoNombre: existing?.insumoNombre || null,
+        gramosPorTaza: existing?.gramosPorTaza ?? (existing?.gramosCafe || defaults.gramos),
+        gramosCafe: existing?.gramosCafe ?? 0,
+        gramosLeche: existing?.gramosLeche ?? 0,
+        gramosCocoa: existing?.gramosCocoa ?? 0,
         precio: existing ? existing.precio : defaults.precio,
       };
     })
@@ -85,14 +95,13 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
     );
   };
 
-  const handleGramosChange = (
+  const handleFieldChange = (
     bebidaId: string,
-    field: "gramosCafe" | "gramosLeche" | "gramosCocoa" | "precio",
-    val: string
+    field: "insumoId" | "gramosPorTaza" | "precio",
+    val: any
   ) => {
-    const num = parseFloat(val) || 0;
     setConfigs((prev) =>
-      prev.map((c) => (c.bebida === bebidaId ? { ...c, [field]: num } : c))
+      prev.map((c) => (c.bebida === bebidaId ? { ...c, [field]: val } : c))
     );
   };
 
@@ -113,7 +122,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95">
+      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95">
         {/* Cabecera del Modal */}
         <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/40">
           <div className="flex items-center gap-2.5">
@@ -122,7 +131,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
             </div>
             <div>
               <h3 className="text-sm font-bold text-stone-900 dark:text-white leading-tight">
-                Calibración de Gramajes y Bebidas: {codigoSerial}
+                Calibración de Premezclas y Gramajes: {codigoSerial}
               </h3>
               <p className="text-[11px] text-stone-500">
                 {modelo} • Capacidad: <strong>{numeroProductos} Productos / Tolvas</strong> (Activas: {activeCount})
@@ -140,11 +149,11 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
         </div>
 
         {/* Formulario de Calibración */}
-        <form onSubmit={handleSave} className="p-4 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+        <form onSubmit={handleSave} className="p-4 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto text-xs">
           {success && (
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4" />
-              ¡Calibración guardada exitosamente! El Kárdex y la PWA usarán estos gramajes.
+              ¡Calibración guardada exitosamente! El Kárdex descontará estas premezclas de bodega.
             </div>
           )}
 
@@ -155,7 +164,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
               return (
                 <div
                   key={c.bebida}
-                  className={`p-3.5 rounded-xl border transition-all text-xs space-y-2.5 ${
+                  className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
                     c.activa
                       ? "bg-white dark:bg-stone-900 border-stone-300 dark:border-stone-700 shadow-sm"
                       : "bg-stone-50/70 dark:bg-stone-900/40 border-stone-200 dark:border-stone-800 opacity-60"
@@ -187,59 +196,52 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
                     </span>
                   </div>
 
-                  {/* Campos de Dosificación en Gramos */}
+                  {/* Campos de Premezcla, Gramaje y Precio */}
                   {c.activa && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-stone-100 dark:border-stone-800">
                       <div>
-                        <span className="text-[10px] font-semibold text-stone-500 block">
-                          Café Soluble (g)
+                        <label className="text-[10px] font-bold text-stone-600 dark:text-stone-400 block mb-1 flex items-center gap-1">
+                          <Package className="w-3 h-3 text-coffee-600 dark:text-amber-400" />
+                          Premezcla / Insumo
+                        </label>
+                        <select
+                          value={c.insumoId || ""}
+                          onChange={(e) =>
+                            handleFieldChange(c.bebida, "insumoId", e.target.value || null)
+                          }
+                          className="w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-2 text-xs outline-none focus:border-coffee-600"
+                        >
+                          <option value="">Sin Premezcla Asignada</option>
+                          {insumos.map((i) => (
+                            <option key={i.id} value={i.id}>
+                              {i.nombre} ({i.unidadMedida})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-semibold text-stone-500 block mb-1">
+                          Gramaje por Taza (g)
                         </span>
                         <input
                           type="number"
                           step="0.1"
                           min="0"
-                          value={c.gramosCafe}
+                          value={c.gramosPorTaza || 0}
                           onChange={(e) =>
-                            handleGramosChange(c.bebida, "gramosCafe", e.target.value)
+                            handleFieldChange(
+                              c.bebida,
+                              "gramosPorTaza",
+                              parseFloat(e.target.value || "0")
+                            )
                           }
-                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 font-bold text-stone-900 dark:text-white text-xs outline-none focus:border-coffee-600"
+                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-bold text-stone-900 dark:text-white text-xs outline-none focus:border-coffee-600 font-mono"
                         />
                       </div>
 
                       <div>
-                        <span className="text-[10px] font-semibold text-stone-500 block">
-                          Leche Polvo (g)
-                        </span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={c.gramosLeche}
-                          onChange={(e) =>
-                            handleGramosChange(c.bebida, "gramosLeche", e.target.value)
-                          }
-                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 font-bold text-stone-900 dark:text-white text-xs outline-none focus:border-coffee-600"
-                        />
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-semibold text-stone-500 block">
-                          Cocoa (g)
-                        </span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={c.gramosCocoa}
-                          onChange={(e) =>
-                            handleGramosChange(c.bebida, "gramosCocoa", e.target.value)
-                          }
-                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 font-bold text-stone-900 dark:text-white text-xs outline-none focus:border-coffee-600"
-                        />
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-semibold text-stone-500 block">
+                        <span className="text-[10px] font-semibold text-stone-500 block mb-1">
                           Precio ($ COP)
                         </span>
                         <input
@@ -248,9 +250,13 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
                           min="0"
                           value={c.precio}
                           onChange={(e) =>
-                            handleGramosChange(c.bebida, "precio", e.target.value)
+                            handleFieldChange(
+                              c.bebida,
+                              "precio",
+                              parseFloat(e.target.value || "0")
+                            )
                           }
-                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg p-1.5 font-black text-coffee-800 dark:text-amber-300 text-xs outline-none focus:border-coffee-600"
+                          className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 font-black text-coffee-800 dark:text-amber-300 text-xs outline-none focus:border-coffee-600 font-mono"
                         />
                       </div>
                     </div>
@@ -263,7 +269,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
           {/* Pie de Acciones */}
           <div className="pt-4 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between">
             <span className="text-xs text-stone-500">
-              Vasos y mezcladores se descuentan a razón de 1 unidad por cada taza servida.
+              Las premezclas seleccionadas se descontarán del kárdex al liquidar.
             </span>
 
             <div className="flex items-center gap-2">

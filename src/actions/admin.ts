@@ -1102,9 +1102,11 @@ export async function guardarCalibracionMaquina(
   configuraciones: Array<{
     bebida: string;
     activa: boolean;
-    gramosCafe: number;
-    gramosLeche: number;
-    gramosCocoa: number;
+    insumoId?: string | null;
+    gramosPorTaza?: number;
+    gramosCafe?: number;
+    gramosLeche?: number;
+    gramosCocoa?: number;
     precio: number;
   }>
 ) {
@@ -1112,7 +1114,7 @@ export async function guardarCalibracionMaquina(
 
   try {
     for (const c of configuraciones) {
-      await prisma.configBebidaMaquina.upsert({
+      await (prisma.configBebidaMaquina as any).upsert({
         where: {
           maquinaId_bebida: {
             maquinaId,
@@ -1121,18 +1123,22 @@ export async function guardarCalibracionMaquina(
         },
         update: {
           activa: c.activa,
-          gramosCafe: c.gramosCafe,
-          gramosLeche: c.gramosLeche,
-          gramosCocoa: c.gramosCocoa,
+          insumoId: c.insumoId || null,
+          gramosPorTaza: c.gramosPorTaza ?? 0,
+          gramosCafe: c.gramosCafe ?? 0,
+          gramosLeche: c.gramosLeche ?? 0,
+          gramosCocoa: c.gramosCocoa ?? 0,
           precio: c.precio,
         },
         create: {
           maquinaId,
           bebida: c.bebida as TipoBebida,
           activa: c.activa,
-          gramosCafe: c.gramosCafe,
-          gramosLeche: c.gramosLeche,
-          gramosCocoa: c.gramosCocoa,
+          insumoId: c.insumoId || null,
+          gramosPorTaza: c.gramosPorTaza ?? 0,
+          gramosCafe: c.gramosCafe ?? 0,
+          gramosLeche: c.gramosLeche ?? 0,
+          gramosCocoa: c.gramosCocoa ?? 0,
           precio: c.precio,
         },
       });
