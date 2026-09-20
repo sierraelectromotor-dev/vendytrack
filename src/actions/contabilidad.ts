@@ -38,7 +38,7 @@ export interface ResumenContable {
   };
 }
 
-export const LABELS_CATEGORIAS: Record<string, string> = {
+const LABELS_CATEGORIAS: Record<string, string> = {
   // Ingresos
   RECAUDO_LIQUIDACION: "Recaudo Liquidación Vending",
   VENTA_DIRECTA: "Venta Directa / Eventos",
