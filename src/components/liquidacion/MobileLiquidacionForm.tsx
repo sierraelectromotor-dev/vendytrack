@@ -371,7 +371,6 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
           <div className="space-y-0.5">
             <p className="font-semibold">Corrija los siguientes campos antes de continuar:</p>
             <ul className="list-disc list-inside text-[11px] text-rose-700 dark:text-rose-300 space-y-0.5">
-              {errors.fotoContadorBase64 && <li>Foto del contador requerida</li>}
               {errors.firmaClienteBase64 && <li>Firma del cliente requerida</li>}
               {errors.detalles && <li>Verifique los contadores ingresados</li>}
             </ul>
@@ -514,7 +513,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-stone-700 dark:text-stone-200 uppercase tracking-wider flex items-center gap-1.5">
             <Camera className="w-3.5 h-3.5 text-coffee-600" />
-            Foto de los Contadores de la Máquina *
+            Foto de los Contadores de la Máquina (Opcional)
           </label>
           {counterPhotoPreview && (
             <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">

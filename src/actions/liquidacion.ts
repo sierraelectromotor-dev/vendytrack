@@ -131,12 +131,17 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     // 1. Validación estricta con Zod
     const validatedData = liquidacionFormSchema.parse(formData);
 
-    // 2. Subida de evidencias a Vercel Blob
+    // 2. Subida de evidencias a Vercel Blob (foto es opcional)
     const [fotoContadorUrl, firmaClienteUrl] = await Promise.all([
-      uploadCounterPhoto(
-        Buffer.from(validatedData.fotoContadorBase64.replace(/^data:image\/\w+;base64,/, ""), "base64"),
-        `contador-${validatedData.maquinaId}`
-      ),
+      validatedData.fotoContadorBase64 && validatedData.fotoContadorBase64.length > 50
+        ? uploadCounterPhoto(
+            Buffer.from(
+              validatedData.fotoContadorBase64.replace(/^data:image\/\w+;base64,/, ""),
+              "base64"
+            ),
+            `contador-${validatedData.maquinaId}`
+          )
+        : Promise.resolve(""),
       uploadSignature(
         validatedData.firmaClienteBase64,
         `firma-${validatedData.clienteId}`

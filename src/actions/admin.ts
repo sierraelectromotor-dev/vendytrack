@@ -244,6 +244,13 @@ export async function obtenerRuteros() {
 
 export async function crearUsuario(formData: FormData) {
   try {
+    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+      return {
+        success: false,
+        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+      };
+    }
+
     const name = formData.get("name")?.toString().trim();
     const email = formData.get("email")?.toString().trim().toLowerCase();
     const password = formData.get("password")?.toString();
@@ -279,6 +286,13 @@ export async function actualizarUsuario(
   data: { name: string; email?: string; password?: string }
 ) {
   try {
+    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+      return {
+        success: false,
+        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+      };
+    }
+
     const { name, email, password } = data;
     if (!name || !name.trim()) {
       return { success: false, error: "El nombre es obligatorio" };
@@ -316,6 +330,13 @@ export async function actualizarUsuario(
 
 export async function eliminarUsuario(id: string) {
   try {
+    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+      return {
+        success: false,
+        error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
+      };
+    }
+
     const user = await prisma.user.findUnique({
       where: { id },
       include: {

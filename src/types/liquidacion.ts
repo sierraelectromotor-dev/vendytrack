@@ -50,7 +50,7 @@ export const liquidacionFormSchema = z.object({
     required_error: "Debe seleccionar el método de pago",
   }),
   detalles: z.array(detalleBebidaSchema).min(1, "Debe registrar al menos una bebida"),
-  fotoContadorBase64: z.string().min(10, "Debe capturar la foto de los contadores"),
+  fotoContadorBase64: z.string().optional().default(""),
   firmaClienteBase64: z.string().min(10, "La firma del encargado es obligatoria"),
   notas: z.string().optional(),
 });
