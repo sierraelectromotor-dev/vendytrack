@@ -545,7 +545,7 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
                           <div className="relative">
                             <input
                               type="number"
-                              step="0.1"
+                              step="any"
                               min="0"
                               value={b.gramosPorTaza ?? 18}
                               onChange={(e) =>
@@ -593,7 +593,7 @@ export const EditarMaquinaModal: React.FC<EditarMaquinaModalProps> = ({
                           </label>
                           <input
                             type="number"
-                            step="100"
+                            step="any"
                             min="0"
                             value={b.precio}
                             onChange={(e) =>

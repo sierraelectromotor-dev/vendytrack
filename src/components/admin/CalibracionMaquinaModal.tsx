@@ -226,7 +226,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
                         </span>
                         <input
                           type="number"
-                          step="0.1"
+                          step="any"
                           min="0"
                           value={c.gramosPorTaza || 0}
                           onChange={(e) =>
@@ -246,7 +246,7 @@ export const CalibracionMaquinaModal: React.FC<CalibracionMaquinaModalProps> = (
                         </span>
                         <input
                           type="number"
-                          step="50"
+                          step="any"
                           min="0"
                           value={c.precio}
                           onChange={(e) =>

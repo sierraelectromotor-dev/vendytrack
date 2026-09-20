@@ -550,7 +550,7 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                         <div className="relative">
                           <input
                             type="number"
-                            step="0.1"
+                            step="any"
                             min="0"
                             required
                             value={slot.gramosPorTaza}
@@ -601,7 +601,7 @@ export const CrearMaquinaModal: React.FC<CrearMaquinaModalProps> = ({
                         <input
                           type="number"
                           min="0"
-                          step="100"
+                          step="any"
                           required
                           value={slot.precio}
                           onChange={(e) =>

@@ -140,7 +140,7 @@ export const PreciosManager: React.FC<PreciosManagerProps> = ({ maquinas }) => {
                   <span className="font-bold text-stone-400">$</span>
                   <input
                     type="number"
-                    step="50"
+                    step="any"
                     min="0"
                     value={precioActual}
                     onChange={(e) => handlePriceChange(b.id, e.target.value)}
