@@ -8,7 +8,15 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const connectionString = process.env.DATABASE_URL || "";
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_PRISMA_DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    "";
+
+  if (!process.env.DATABASE_URL && connectionString) {
+    process.env.DATABASE_URL = connectionString;
+  }
 
   // En entornos de desarrollo o sin DATABASE_URL configurada aún,
   // permitimos inicializar de forma segura sin romper la compilación

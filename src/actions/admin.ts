@@ -242,9 +242,21 @@ export async function obtenerRuteros() {
   }
 }
 
+function getDatabaseUrl() {
+  const url =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_PRISMA_DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    "";
+  if (!process.env.DATABASE_URL && url) {
+    process.env.DATABASE_URL = url;
+  }
+  return url.trim();
+}
+
 export async function crearUsuario(formData: FormData) {
   try {
-    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+    if (!getDatabaseUrl()) {
       return {
         success: false,
         error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
@@ -286,7 +298,7 @@ export async function actualizarUsuario(
   data: { name: string; email?: string; password?: string }
 ) {
   try {
-    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+    if (!getDatabaseUrl()) {
       return {
         success: false,
         error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
@@ -330,7 +342,7 @@ export async function actualizarUsuario(
 
 export async function eliminarUsuario(id: string) {
   try {
-    if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
+    if (!getDatabaseUrl()) {
       return {
         success: false,
         error: "Falta configurar DATABASE_URL en Vercel. Ve a Project Settings > Environment Variables y coloca la URL de tu base de datos.",
