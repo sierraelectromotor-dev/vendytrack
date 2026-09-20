@@ -189,6 +189,87 @@ export async function crearInsumo(formData: FormData) {
   }
 }
 
+export async function editarInsumo(formData: FormData) {
+  await requireAdmin();
+
+  try {
+    const id = formData.get("id")?.toString();
+    const nombre = formData.get("nombre")?.toString().trim();
+    const codigo = formData.get("codigo")?.toString().trim().toUpperCase();
+    const unidadMedida = (formData.get("unidadMedida")?.toString() || "KG") as UnidadMedida;
+    const stockActual = parseFloat(formData.get("stockActual")?.toString() || "0");
+    const stockMinimo = parseFloat(formData.get("stockMinimo")?.toString() || "0");
+    const costoPromedio = parseFloat(formData.get("costoPromedio")?.toString() || "0");
+
+    if (!id || !nombre || !codigo) {
+      return { success: false, error: "El ID, nombre y código del insumo son obligatorios" };
+    }
+
+    // Verificar si el código ya lo usa otro insumo distinto
+    const codigoExistente = await prisma.insumo.findFirst({
+      where: {
+        codigo,
+        NOT: { id },
+      },
+    });
+
+    if (codigoExistente) {
+      return { success: false, error: `Ya existe otro insumo con el código ${codigo}` };
+    }
+
+    await prisma.insumo.update({
+      where: { id },
+      data: {
+        nombre,
+        codigo,
+        unidadMedida,
+        stockActual,
+        stockMinimo,
+        costoPromedio,
+      },
+    });
+
+    revalidatePath("/admin/inventario");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[editarInsumo] Error:", error);
+    return { success: false, error: error.message || "Error al actualizar insumo" };
+  }
+}
+
+export async function eliminarInsumo(insumoId: string) {
+  await requireAdmin();
+
+  try {
+    if (!insumoId) {
+      return { success: false, error: "ID de insumo no proporcionado" };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Eliminar movimientos asociados en Kárdex
+      await tx.movimientoInventario.deleteMany({
+        where: { insumoId },
+      });
+
+      // 2. Eliminar recetas asociadas
+      await tx.recetaInsumo.deleteMany({
+        where: { insumoId },
+      });
+
+      // 3. Eliminar el insumo
+      await tx.insumo.delete({
+        where: { id: insumoId },
+      });
+    });
+
+    revalidatePath("/admin/inventario");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[eliminarInsumo] Error:", error);
+    return { success: false, error: error.message || "Error al eliminar insumo" };
+  }
+}
+
 export async function cargarInsumosEstandar() {
   await requireAdmin();
 
@@ -517,12 +598,14 @@ export async function obtenerClientes() {
         direccion: c.direccion,
         contacto: c.contacto,
         whatsapp: c.whatsapp,
+        activo: c.activo,
         maquinas: c.maquinas.map((m) => ({
           id: m.id,
           codigoSerial: m.codigoSerial,
           modelo: m.modelo,
           ubicacion: m.ubicacion,
           numeroProductos: m.numeroProductos,
+          contadorActual: (m as any).contadorActual ?? 0,
           rutaNombre: m.ruta?.nombre || "Sin Ruta Asignada",
           configuraciones: m.configuraciones.map((cfg) => ({
             id: cfg.id,
@@ -577,6 +660,42 @@ export async function crearCliente(formData: FormData) {
   }
 }
 
+export async function actualizarCliente(formData: FormData) {
+  await requireAdmin();
+
+  try {
+    const id = formData.get("id")?.toString();
+    const razonSocial = formData.get("razonSocial")?.toString().trim();
+    const sede = formData.get("sede")?.toString().trim();
+    const direccion = formData.get("direccion")?.toString().trim();
+    const contacto = formData.get("contacto")?.toString().trim();
+    const whatsapp = formData.get("whatsapp")?.toString().trim();
+    const activo = formData.get("activo") === "true" || formData.get("activo") === "on";
+
+    if (!id || !razonSocial || !sede || !direccion || !contacto || !whatsapp) {
+      return { success: false, error: "Todos los campos son obligatorios" };
+    }
+
+    await prisma.cliente.update({
+      where: { id },
+      data: {
+        razonSocial,
+        sede,
+        direccion,
+        contacto,
+        whatsapp,
+        activo,
+      },
+    });
+
+    revalidatePath("/admin/clientes");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[actualizarCliente] Error:", error);
+    return { success: false, error: error.message || "Error al actualizar cliente" };
+  }
+}
+
 export async function crearMaquina(formData: FormData) {
   await requireAdmin();
 
@@ -587,6 +706,7 @@ export async function crearMaquina(formData: FormData) {
     const clienteId = formData.get("clienteId")?.toString();
     const rutaId = formData.get("rutaId")?.toString() || null;
     const numeroProductos = parseInt(formData.get("numeroProductos")?.toString() || "4", 10);
+    const contadorActual = parseInt(formData.get("contadorActual")?.toString() || "0", 10);
 
     if (!codigoSerial || !modelo || !ubicacion || !clienteId) {
       return { success: false, error: "Datos de máquina incompletos" };
@@ -598,6 +718,7 @@ export async function crearMaquina(formData: FormData) {
         modelo,
         ubicacion,
         numeroProductos,
+        contadorActual: isNaN(contadorActual) ? 0 : contadorActual,
         clienteId,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
       },

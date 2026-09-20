@@ -202,21 +202,36 @@ export default async function ClientesPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                  Número de Productos (Selecciones) *
+                  N° Selecciones *
                 </label>
                 <select
                   name="numeroProductos"
                   className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600 font-bold"
                 >
-                  <option value="3">3 Productos / Bebidas</option>
-                  <option value="4">4 Productos / Bebidas</option>
-                  <option value="6">6 Productos / Bebidas</option>
-                  <option value="7">7 Productos / Bebidas</option>
-                  <option value="8">8 Productos / Bebidas</option>
+                  <option value="3">3 Bebidas</option>
+                  <option value="4">4 Bebidas</option>
+                  <option value="6">6 Bebidas</option>
+                  <option value="7">7 Bebidas</option>
+                  <option value="8">8 Bebidas</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1" title="Contador inicial de la máquina">
+                  Contador Actual *
+                </label>
+                <input
+                  type="number"
+                  name="contadorActual"
+                  required
+                  defaultValue="0"
+                  min="0"
+                  placeholder="ej. 1450"
+                  className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600 font-mono font-bold"
+                />
               </div>
 
               <div>
@@ -227,7 +242,7 @@ export default async function ClientesPage() {
                   name="rutaId"
                   className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2 outline-none focus:border-coffee-600"
                 >
-                  <option value="none">Sin Ruta Asignada</option>
+                  <option value="none">Sin Ruta</option>
                   {rutas.map((r: any) => (
                     <option key={r.id} value={r.id}>
                       {r.nombre}

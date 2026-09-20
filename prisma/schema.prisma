@@ -101,6 +101,7 @@ model Maquina {
   ubicacion       String                 // Ubicación física dentro del local (ej. Piso 2 Cafetería)
   modelo          String                 // ej. Soluble 3/4 Tolvas Bianchi
   numeroProductos Int                    @default(4) // Número de selecciones/productos de la máquina
+  contadorActual  Int                    @default(0) // Contador actual / inicial de la máquina
   clienteId       String
   cliente         Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   rutaId          String?

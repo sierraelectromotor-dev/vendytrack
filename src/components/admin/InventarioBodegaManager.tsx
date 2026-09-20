@@ -6,6 +6,7 @@ import {
   crearInsumo,
   cargarInsumosEstandar,
   registrarEntradaBodega,
+  eliminarInsumo,
 } from "@/actions/admin";
 import {
   Package,
@@ -21,7 +22,10 @@ import {
   X,
   Loader2,
   AlertCircle,
+  Pencil,
+  Trash2,
 } from "lucide-react";
+import { EditarInsumoModal } from "./EditarInsumoModal";
 
 export interface InsumoItem {
   id: string;
@@ -56,6 +60,9 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
   const { insumos, movimientos } = initialData;
 
   const [isCreatingInsumo, setIsCreatingInsumo] = useState(false);
+  const [selectedInsumoParaEditar, setSelectedInsumoParaEditar] = useState<InsumoItem | null>(null);
+  const [insumoAEliminar, setInsumoAEliminar] = useState<InsumoItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [loadingStandard, setLoadingStandard] = useState(false);
   const [submittingInsumo, setSubmittingInsumo] = useState(false);
   const [submittingCompra, setSubmittingCompra] = useState(false);
@@ -134,6 +141,29 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
       setMessage({
         type: "error",
         text: res.error || "Error al registrar la entrada.",
+      });
+    }
+  };
+
+  // Manejar eliminación de insumo
+  const handleEliminarInsumo = async () => {
+    if (!insumoAEliminar) return;
+    setIsDeleting(true);
+    setMessage(null);
+
+    const res = await eliminarInsumo(insumoAEliminar.id);
+    setIsDeleting(false);
+
+    if (res.success) {
+      setMessage({
+        type: "success",
+        text: `Insumo "${insumoAEliminar.nombre}" eliminado exitosamente de la bodega.`,
+      });
+      setInsumoAEliminar(null);
+    } else {
+      setMessage({
+        type: "error",
+        text: res.error || "Error al eliminar el insumo.",
       });
     }
   };
@@ -260,7 +290,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                   </div>
                 )}
 
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-coffee-600 dark:text-amber-400 block">
                       {i.codigo}
@@ -269,8 +299,23 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                       {i.nombre}
                     </h3>
                   </div>
-                  <div className="p-2 bg-coffee-50 dark:bg-stone-800 rounded-xl text-coffee-700 dark:text-amber-400">
-                    <Boxes className="w-5 h-5" />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInsumoParaEditar(i)}
+                      className="p-1.5 text-stone-400 hover:text-coffee-700 dark:hover:text-amber-300 hover:bg-coffee-50 dark:hover:bg-stone-800 rounded-lg transition-colors border border-transparent hover:border-coffee-200 dark:hover:border-stone-700 shadow-xs"
+                      title="Editar insumo"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInsumoAEliminar(i)}
+                      className="p-1.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors border border-transparent hover:border-rose-200 dark:hover:border-rose-900 shadow-xs"
+                      title="Eliminar insumo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
@@ -604,6 +649,67 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Insumo */}
+      {selectedInsumoParaEditar && (
+        <EditarInsumoModal
+          insumo={selectedInsumoParaEditar}
+          onClose={() => setSelectedInsumoParaEditar(null)}
+          onSuccess={() => {
+            setMessage({
+              type: "success",
+              text: "Insumo actualizado exitosamente.",
+            });
+          }}
+        />
+      )}
+
+      {/* Modal Confirmación Eliminar Insumo */}
+      {insumoAEliminar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-base text-stone-900 dark:text-white">
+                ¿Eliminar Insumo?
+              </h3>
+              <p className="text-xs text-stone-500">
+                Estás a punto de eliminar <strong className="text-stone-800 dark:text-stone-200">{insumoAEliminar.nombre}</strong> ({insumoAEliminar.codigo}).
+                Esta acción borrará también su historial asociado en Kárdex.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInsumoAEliminar(null)}
+                disabled={isDeleting}
+                className="flex-1 py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleEliminarInsumo}
+                disabled={isDeleting}
+                className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <span>Sí, Eliminar</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

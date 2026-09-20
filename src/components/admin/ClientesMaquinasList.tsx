@@ -10,11 +10,13 @@ import {
   CheckCircle2,
   Layers,
   Sparkles,
+  Pencil,
 } from "lucide-react";
 import {
   CalibracionMaquinaModal,
   BebidaConfigItem,
 } from "./CalibracionMaquinaModal";
+import { EditarClienteModal } from "./EditarClienteModal";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
 export interface MaquinaItem {
@@ -23,6 +25,7 @@ export interface MaquinaItem {
   modelo: string;
   ubicacion: string;
   numeroProductos: number;
+  contadorActual: number;
   rutaNombre: string;
   configuraciones: BebidaConfigItem[];
 }
@@ -34,6 +37,7 @@ export interface ClienteItem {
   direccion: string;
   contacto: string;
   whatsapp: string;
+  activo?: boolean;
   maquinas: MaquinaItem[];
 }
 
@@ -45,6 +49,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
   clientes,
 }) => {
   const [selectedMaquina, setSelectedMaquina] = useState<MaquinaItem | null>(null);
+  const [selectedClienteParaEditar, setSelectedClienteParaEditar] = useState<ClienteItem | null>(null);
 
   return (
     <div className="space-y-4">
@@ -65,7 +70,7 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
             className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-4 hover:border-coffee-300 dark:hover:border-stone-700 transition-all"
           >
             {/* Header del Cliente */}
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-2">
               <div>
                 <h4 className="font-bold text-base text-stone-900 dark:text-white leading-tight">
                   {c.razonSocial}
@@ -74,10 +79,28 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                   {c.sede}
                 </span>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                Activo
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedClienteParaEditar(c)}
+                  className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-stone-200 dark:border-stone-700 shadow-xs"
+                  title="Editar información del cliente"
+                >
+                  <Pencil className="w-3 h-3 text-stone-500 dark:text-stone-400" />
+                  <span>Editar</span>
+                </button>
+
+                {c.activo !== false ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    Activo
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-600 dark:bg-stone-800 dark:text-stone-400">
+                    Inactivo
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Datos de Contacto */}
@@ -119,12 +142,18 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-stone-900 dark:text-white text-xs">
                                 {m.codigoSerial}
                               </span>
                               <span className="text-[10px] font-semibold text-coffee-800 dark:text-amber-300 bg-coffee-100/70 dark:bg-stone-800 px-2 py-0.5 rounded-md border border-coffee-200 dark:border-stone-700">
                                 {m.numeroProductos} Selecciones
+                              </span>
+                              <span
+                                className="text-[10px] font-mono font-semibold text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-900 px-2 py-0.5 rounded-md border border-stone-200 dark:border-stone-700"
+                                title="Contador actual / inicial de la máquina"
+                              >
+                                🔢 C.A: {m.contadorActual ? m.contadorActual.toLocaleString("es-CO") : 0}
                               </span>
                             </div>
                             <span className="text-[11px] text-stone-500 block mt-0.5">
@@ -196,6 +225,14 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
           numeroProductos={selectedMaquina.numeroProductos}
           configuracionesIniciales={selectedMaquina.configuraciones}
           onClose={() => setSelectedMaquina(null)}
+        />
+      )}
+
+      {/* Modal de Edición de Cliente */}
+      {selectedClienteParaEditar && (
+        <EditarClienteModal
+          cliente={selectedClienteParaEditar}
+          onClose={() => setSelectedClienteParaEditar(null)}
         />
       )}
     </div>

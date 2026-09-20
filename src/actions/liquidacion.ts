@@ -83,7 +83,7 @@ export async function obtenerDatosMaquina(maquinaId: string) {
             bebida: c.bebida,
             nombre: catalogo?.nombre || c.bebida,
             icono: catalogo?.icono || "☕",
-            contadorAnterior: mapaUltimosContadores[c.bebida] ?? 0,
+            contadorAnterior: mapaUltimosContadores[c.bebida] ?? (maquina as any).contadorActual ?? 0,
             precioUnitario: Number(c.precio) || mapaPrecios[c.bebida] || preciosPorDefecto[c.bebida as TipoBebidaEnum],
           };
         });
@@ -92,7 +92,7 @@ export async function obtenerDatosMaquina(maquinaId: string) {
         bebida: b.id,
         nombre: b.nombre,
         icono: b.icono,
-        contadorAnterior: mapaUltimosContadores[b.id] ?? 0,
+        contadorAnterior: mapaUltimosContadores[b.id] ?? (maquina as any).contadorActual ?? 0,
         precioUnitario: mapaPrecios[b.id] ?? preciosPorDefecto[b.id],
       }));
     }
@@ -346,6 +346,16 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
           },
         });
       }
+
+      // C. Actualizar contador actual de la máquina con el valor más reciente
+      const maxContadorRegistrado = Math.max(
+        ...lineasCalculadas.map((l) => l.contadorActual),
+        (maquinaData as any).contadorActual ?? 0
+      );
+      await tx.maquina.update({
+        where: { id: validatedData.maquinaId },
+        data: { contadorActual: maxContadorRegistrado },
+      });
 
       return liq;
     });
