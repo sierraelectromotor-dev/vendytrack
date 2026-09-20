@@ -23,10 +23,6 @@ export async function obtenerInventarioBodega() {
       },
     });
 
-    if (insumos.length === 0) {
-      return getMockInventario();
-    }
-
     return {
       success: true,
       data: {
@@ -128,41 +124,6 @@ export async function obtenerUsuarios() {
       orderBy: { name: "asc" },
     });
 
-    if (usuarios.length === 0) {
-      return {
-        success: true,
-        data: [
-          {
-            id: "usr-admin-01",
-            name: "Andrés Restrepo",
-            email: "admin@vendytrack.com",
-            rol: "ADMIN" as const,
-            rutas: [],
-            totalLiquidaciones: 0,
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: "operador-default-1",
-            name: "Carlos Mendoza",
-            email: "carlos.operador@vendytrack.com",
-            rol: "OPERADOR_RUTA" as const,
-            rutas: ["Ruta 1 - Clínicas y Hospitales Norte"],
-            totalLiquidaciones: 5,
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: "operador-2",
-            name: "Javier Morales",
-            email: "javier.ruta@vendytrack.com",
-            rol: "OPERADOR_RUTA" as const,
-            rutas: ["Ruta 2 - Oficinas Calle 72"],
-            totalLiquidaciones: 0,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      };
-    }
-
     return {
       success: true,
       data: usuarios.map((u) => ({
@@ -176,38 +137,10 @@ export async function obtenerUsuarios() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerUsuarios] Fallback mock:", error);
+    console.warn("[obtenerUsuarios] Fallback error:", error);
     return {
       success: true,
-      data: [
-        {
-          id: "usr-admin-01",
-          name: "Andrés Restrepo",
-          email: "admin@vendytrack.com",
-          rol: "ADMIN" as const,
-          rutas: [],
-          totalLiquidaciones: 0,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "operador-default-1",
-          name: "Carlos Mendoza",
-          email: "carlos.operador@vendytrack.com",
-          rol: "OPERADOR_RUTA" as const,
-          rutas: ["Ruta 1 - Clínicas y Hospitales Norte"],
-          totalLiquidaciones: 5,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "operador-2",
-          name: "Javier Morales",
-          email: "javier.ruta@vendytrack.com",
-          rol: "OPERADOR_RUTA" as const,
-          rutas: ["Ruta 2 - Oficinas Calle 72"],
-          totalLiquidaciones: 0,
-          createdAt: new Date().toISOString(),
-        },
-      ],
+      data: [],
     };
   }
 }
@@ -222,10 +155,6 @@ export async function obtenerRuteros() {
       orderBy: { name: "asc" },
     });
 
-    if (ruteros.length === 0) {
-      return getMockRuteros();
-    }
-
     return {
       success: true,
       data: ruteros.map((r) => ({
@@ -237,8 +166,11 @@ export async function obtenerRuteros() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerRuteros] Fallback mock:", error);
-    return getMockRuteros();
+    console.warn("[obtenerRuteros] Fallback error:", error);
+    return {
+      success: true,
+      data: [],
+    };
   }
 }
 
@@ -419,10 +351,6 @@ export async function obtenerClientes() {
       orderBy: { razonSocial: "asc" },
     });
 
-    if (clientes.length === 0) {
-      return getMockClientes();
-    }
-
     return {
       success: true,
       data: clientes.map((c) => ({
@@ -452,8 +380,11 @@ export async function obtenerClientes() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerClientes] Fallback mock:", error);
-    return getMockClientes();
+    console.warn("[obtenerClientes] Fallback error:", error);
+    return {
+      success: true,
+      data: [],
+    };
   }
 }
 
@@ -691,10 +622,6 @@ export async function obtenerRutas() {
       orderBy: { nombre: "asc" },
     });
 
-    if (rutas.length === 0) {
-      return getMockRutas();
-    }
-
     return {
       success: true,
       data: rutas.map((r) => ({
@@ -714,8 +641,11 @@ export async function obtenerRutas() {
       })),
     };
   } catch (error) {
-    console.warn("[obtenerRutas] Fallback mock:", error);
-    return getMockRutas();
+    console.warn("[obtenerRutas] Fallback error:", error);
+    return {
+      success: true,
+      data: [],
+    };
   }
 }
 
