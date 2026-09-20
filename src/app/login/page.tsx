@@ -107,7 +107,7 @@ export default function LoginPage() {
 
         {/* Pie de página */}
         <p className="text-center text-[11px] text-stone-400">
-          VendyTrack PWA • Arquitectura Serverless en Vercel
+          VendyTrack PWA • PowerBy SierraElectromotor
         </p>
       </div>
     </div>

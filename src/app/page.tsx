@@ -67,7 +67,7 @@ export default async function HomePage() {
               VendyTrack PWA
             </h1>
             <p className="text-[10px] text-stone-500 font-medium">
-              Vercel Serverless Architecture
+              PowerBy SierraElectromotor
             </p>
           </div>
         </div>
