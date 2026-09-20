@@ -733,7 +733,8 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                   Firma Digital del Cliente:
                 </span>
                 <div className="border border-stone-200 dark:border-stone-800 rounded-xl p-2 bg-stone-50 dark:bg-stone-950 flex items-center justify-center min-h-[110px]">
-                  {selectedLiquidacion.firmaClienteUrl ? (
+                  {selectedLiquidacion.firmaClienteUrl &&
+                  !selectedLiquidacion.firmaClienteUrl.includes("demo.public.blob") ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={selectedLiquidacion.firmaClienteUrl}
@@ -741,7 +742,11 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                       className="max-h-24 object-contain filter dark:invert"
                     />
                   ) : (
-                    <span className="text-[11px] text-stone-400">Sin firma registrada</span>
+                    <span className="text-[11px] text-stone-400 text-center px-2">
+                      {selectedLiquidacion.firmaClienteUrl?.includes("demo.public.blob")
+                        ? "Firma no disponible (registro de prueba anterior)"
+                        : "Sin firma registrada"}
+                    </span>
                   )}
                 </div>
               </div>
@@ -752,7 +757,9 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                   Foto de Contador (Evidencia):
                 </span>
                 <div className="border border-stone-200 dark:border-stone-800 rounded-xl p-2 bg-stone-50 dark:bg-stone-950 flex items-center justify-center min-h-[110px]">
-                  {selectedLiquidacion.fotoContadorUrl && selectedLiquidacion.fotoContadorUrl.length > 20 ? (
+                  {selectedLiquidacion.fotoContadorUrl &&
+                  selectedLiquidacion.fotoContadorUrl.length > 20 &&
+                  !selectedLiquidacion.fotoContadorUrl.includes("demo.public.blob") ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={selectedLiquidacion.fotoContadorUrl}
@@ -760,7 +767,11 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                       className="max-h-28 object-contain rounded-lg"
                     />
                   ) : (
-                    <span className="text-[11px] text-stone-400">Foto no adjuntada (opcional)</span>
+                    <span className="text-[11px] text-stone-400 text-center px-2">
+                      {selectedLiquidacion.fotoContadorUrl?.includes("demo.public.blob")
+                        ? "Foto no disponible (registro de prueba anterior)"
+                        : "Foto no adjuntada (opcional)"}
+                    </span>
                   )}
                 </div>
               </div>

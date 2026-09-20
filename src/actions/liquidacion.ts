@@ -167,14 +167,15 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     const validatedData = liquidacionFormSchema.parse(formData);
 
     // 3. Subida de evidencias a Vercel Blob (foto es opcional)
-    const [fotoContadorUrl, firmaClienteUrl] = await Promise.all([
+    const [fotoContadorUrl, uploadedFirmaUrl] = await Promise.all([
       validatedData.fotoContadorBase64 && validatedData.fotoContadorBase64.length > 50
         ? uploadCounterPhoto(
             Buffer.from(
               validatedData.fotoContadorBase64.replace(/^data:image\/\w+;base64,/, ""),
               "base64"
             ),
-            `contador-${validatedData.maquinaId}`
+            `contador-${validatedData.maquinaId}`,
+            validatedData.fotoContadorBase64
           )
         : Promise.resolve(""),
       uploadSignature(
@@ -182,6 +183,9 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         `firma-${validatedData.clienteId}`
       ),
     ]);
+
+    // Garantizar que la firma nunca sea vacía ni una URL rota
+    const firmaClienteUrl = uploadedFirmaUrl || validatedData.firmaClienteBase64;
 
     // 4. Cálculos matemáticos en servidor
     let totalTazasNetas = 0;
@@ -446,13 +450,34 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         totalTazasNetas,
         totalFacturado,
       },
-      firmaClienteUrl: validatedData.firmaClienteBase64,
+      firmaClienteUrl: firmaClienteUrl || validatedData.firmaClienteBase64,
       notas: validatedData.notas,
     };
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+    if (!baseUrl) {
+      try {
+        const { headers } = await import("next/headers");
+        const headersList = headers();
+        const host = headersList.get("x-forwarded-host") || headersList.get("host");
+        const proto =
+          headersList.get("x-forwarded-proto") || (host?.includes("localhost") ? "http" : "https");
+        if (host) {
+          baseUrl = `${proto}://${host}`;
+        }
+      } catch {
+        // Fallback si headers() no está disponible
+      }
+    }
+
+    if (!baseUrl) {
+      baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000";
+    }
 
     let reciboPdfUrl = `${baseUrl}/api/liquidaciones/${liquidacionId}/pdf`;
 

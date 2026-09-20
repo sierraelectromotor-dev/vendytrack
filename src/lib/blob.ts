@@ -2,37 +2,44 @@ import { put } from "@vercel/blob";
 
 /**
  * Sube la foto de los contadores de la máquina a Vercel Blob.
+ * Si Vercel Blob no está configurado o falla, devuelve el fallback Base64 para no romper la imagen.
  * @param file Archivo imagen (File o Buffer)
  * @param filename Nombre identificador del archivo
- * @returns URL pública del archivo subido en Vercel Blob
+ * @param fallbackBase64 Cadena base64 opcional en caso de que Blob no esté disponible
+ * @returns URL pública del archivo subido en Vercel Blob o cadena Base64
  */
 export async function uploadCounterPhoto(
   file: File | Blob | Buffer,
-  filename: string
+  filename: string,
+  fallbackBase64?: string
 ): Promise<string> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-  // Si no hay token de Vercel Blob configurado (ej. entorno local sin Vercel vinculada),
-  // se genera un mock representativo para no bloquear el flujo de desarrollo
+  // Si no hay token de Vercel Blob configurado, usamos el fallback base64
   if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Usando fallback de desarrollo.");
-    return `https://demo.public.blob.vercel-storage.com/evidencias/${Date.now()}-${filename}.jpg`;
+    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Usando imagen Base64 local.");
+    return fallbackBase64 || "";
   }
 
-  const blob = await put(`evidencias/contadores/${Date.now()}-${filename}`, file, {
-    access: "public",
-    addRandomSuffix: true,
-  });
-
-  return blob.url;
+  try {
+    const blob = await put(`evidencias/contadores/${Date.now()}-${filename}`, file, {
+      access: "public",
+      addRandomSuffix: true,
+    });
+    return blob.url;
+  } catch (error) {
+    console.warn("[Vercel Blob] Error subiendo foto a Blob, usando fallback:", error);
+    return fallbackBase64 || "";
+  }
 }
 
 /**
  * Sube la firma del cliente capturada en Canvas a Vercel Blob.
- * Convierte el Data URL (Base64) a Buffer antes de subirlo.
+ * Si Vercel Blob no está configurado o falla, devuelve directamente el Data URL (Base64),
+ * garantizando que la firma siempre se visualice en el Dashboard y en el PDF.
  * @param base64Signature Cadena 'data:image/png;base64,...'
  * @param filename Nombre del archivo
- * @returns URL pública del PNG de la firma
+ * @returns URL pública de Vercel Blob o la misma cadena Data URL Base64
  */
 export async function uploadSignature(
   base64Signature: string,
@@ -41,21 +48,26 @@ export async function uploadSignature(
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
   if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Usando fallback de desarrollo.");
-    return `https://demo.public.blob.vercel-storage.com/firmas/${Date.now()}-${filename}.png`;
+    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Almacenando firma como Data URL Base64.");
+    return base64Signature;
   }
 
-  // Extraer el contenido binario del data URL
-  const base64Data = base64Signature.replace(/^data:image\/\w+;base64,/, "");
-  const buffer = Buffer.from(base64Data, "base64");
+  try {
+    // Extraer el contenido binario del data URL
+    const base64Data = base64Signature.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
 
-  const blob = await put(`firmas/${Date.now()}-${filename}.png`, buffer, {
-    access: "public",
-    contentType: "image/png",
-    addRandomSuffix: true,
-  });
+    const blob = await put(`firmas/${Date.now()}-${filename}.png`, buffer, {
+      access: "public",
+      contentType: "image/png",
+      addRandomSuffix: true,
+    });
 
-  return blob.url;
+    return blob.url;
+  } catch (error) {
+    console.warn("[Vercel Blob] Error al subir firma a Blob, usando Data URL Base64:", error);
+    return base64Signature;
+  }
 }
 
 /**
