@@ -20,6 +20,23 @@ export default async function ContabilidadPage() {
       efectivo: 0,
       transferencia: 0,
     },
+    gastosFijos: [],
+    puntoEquilibrio: {
+      gastosFijosTotales: 0,
+      ventasActuales: 0,
+      costosVariablesActuales: 0,
+      margenContribucionPct: 0.65,
+      puntoEquilibrioDinero: 0,
+      tazasActuales: 0,
+      precioPromedioTaza: 2500,
+      costoVariablePromedioTaza: 850,
+      margenContribucionTaza: 1650,
+      puntoEquilibrioTazas: 0,
+      porcentajeAlcanzado: 0,
+      diferenciaDinero: 0,
+      diferenciaTazas: 0,
+      estaEnEquilibrio: false,
+    },
   };
 
   return (

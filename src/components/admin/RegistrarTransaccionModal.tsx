@@ -173,6 +173,20 @@ export const RegistrarTransaccionModal: React.FC<RegistrarTransaccionModalProps>
             </select>
           </div>
 
+          {/* Opción de marcar como Costo Fijo */}
+          {tipo === "GASTO" && (
+            <label className="flex items-center gap-2 p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-200 dark:border-stone-700 cursor-pointer">
+              <input
+                type="checkbox"
+                name="esFijo"
+                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 accent-amber-600"
+              />
+              <span className="font-semibold text-stone-700 dark:text-stone-300">
+                Marcar como Costo Fijo (incluir en el cálculo del Punto de Equilibrio)
+              </span>
+            </label>
+          )}
+
           {/* Monto y Fecha */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

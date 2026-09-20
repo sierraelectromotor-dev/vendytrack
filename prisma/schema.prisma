@@ -292,6 +292,7 @@ model TransaccionContable {
   referencia     String?              // Factura, comprobante, recibo #
   comprobanteUrl String?              // Soporte / foto
   metodoPago     MetodoPago           @default(EFECTIVO)
+  esFijo         Boolean              @default(false)
   creadoPorId    String?
   creadoPor      User?                @relation(fields: [creadoPorId], references: [id], onDelete: SetNull)
   createdAt      DateTime             @default(now())
@@ -300,5 +301,21 @@ model TransaccionContable {
   @@index([tipo])
   @@index([categoria])
   @@index([fecha])
+  @@index([esFijo])
 }
+
+model GastoFijo {
+  id          String               @id @default(cuid())
+  concepto    String               // ej. "Arriendo Bodega Central", "Nómina Base"
+  categoria   CategoriaTransaccion @default(SERVICIOS_ARRIENDO)
+  monto       Decimal              @db.Decimal(12, 2)
+  diaCobro    Int?                 @default(1)
+  activo      Boolean              @default(true)
+  descripcion String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([activo])
+}
+
 

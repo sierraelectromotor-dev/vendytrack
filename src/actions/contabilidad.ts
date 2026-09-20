@@ -15,9 +15,38 @@ export interface TransaccionUnificada {
   descripcion: string;
   referencia?: string | null;
   metodoPago: string;
+  esFijo?: boolean;
   esLiquidacion: boolean;
   reciboPdfUrl?: string | null;
   creadoPorNombre?: string | null;
+}
+
+export interface GastoFijoItem {
+  id: string;
+  concepto: string;
+  categoria: string;
+  categoriaLabel: string;
+  monto: number;
+  diaCobro: number;
+  activo: boolean;
+  descripcion?: string | null;
+}
+
+export interface PuntoEquilibrioData {
+  gastosFijosTotales: number;
+  ventasActuales: number;
+  costosVariablesActuales: number;
+  margenContribucionPct: number;
+  puntoEquilibrioDinero: number;
+  tazasActuales: number;
+  precioPromedioTaza: number;
+  costoVariablePromedioTaza: number;
+  margenContribucionTaza: number;
+  puntoEquilibrioTazas: number;
+  porcentajeAlcanzado: number;
+  diferenciaDinero: number;
+  diferenciaTazas: number;
+  estaEnEquilibrio: boolean;
 }
 
 export interface ResumenContable {
@@ -36,6 +65,8 @@ export interface ResumenContable {
     efectivo: number;
     transferencia: number;
   };
+  gastosFijos: GastoFijoItem[];
+  puntoEquilibrio: PuntoEquilibrioData;
 }
 
 const LABELS_CATEGORIAS: Record<string, string> = {
@@ -84,6 +115,7 @@ export async function obtenerResumenContable(filtros?: {
         cliente: true,
         maquina: true,
         operador: true,
+        detalles: true,
       },
       orderBy: { fecha: "desc" },
     });
@@ -102,7 +134,12 @@ export async function obtenerResumenContable(filtros?: {
       orderBy: { fecha: "desc" },
     });
 
-    // 3. Unificar transacciones
+    // 3. Obtener configuración de Gastos Fijos
+    const gastosFijosDb = await prisma.gastoFijo.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    // 4. Unificar transacciones
     const transaccionesUnificadas: TransaccionUnificada[] = [];
 
     // Mapear liquidaciones a transacciones tipo INGRESO
@@ -117,6 +154,7 @@ export async function obtenerResumenContable(filtros?: {
         descripcion: `Liquidación #${l.consecutivo} - ${l.cliente.razonSocial} (${l.maquina.codigoSerial})`,
         referencia: `LIQ-${l.consecutivo}`,
         metodoPago: l.metodoPago,
+        esFijo: false,
         esLiquidacion: true,
         reciboPdfUrl: l.reciboPdfUrl || `/api/liquidaciones/${l.id}/pdf`,
         creadoPorNombre: l.operador.name,
@@ -135,6 +173,7 @@ export async function obtenerResumenContable(filtros?: {
         descripcion: t.descripcion,
         referencia: t.referencia,
         metodoPago: t.metodoPago,
+        esFijo: t.esFijo,
         esLiquidacion: false,
         creadoPorNombre: t.creadoPor?.name || "Administrador",
       });
@@ -145,7 +184,7 @@ export async function obtenerResumenContable(filtros?: {
       (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
     );
 
-    // 4. Cálculos de Totales y KPIs
+    // 5. Cálculos de Totales y KPIs
     let totalIngresos = 0;
     let totalGastos = 0;
     let efectivoTotal = 0;
@@ -178,6 +217,97 @@ export async function obtenerResumenContable(filtros?: {
       }))
       .sort((a, b) => b.monto - a.monto);
 
+    // 6. Cálculo del Punto de Equilibrio (Break-Even)
+    const tazasActuales = liquidaciones.reduce(
+      (acc, l) => acc + l.detalles.reduce((dAcc, d) => dAcc + d.tazasNetas, 0),
+      0
+    );
+
+    // Gastos fijos activos configurados + transacciones marcadas como fijas en el mes
+    const gastosFijosTotales =
+      gastosFijosDb
+        .filter((gf) => gf.activo)
+        .reduce((acc, gf) => acc + Number(gf.monto), 0) +
+      transaccionesManuales
+        .filter((t) => t.tipo === "GASTO" && t.esFijo)
+        .reduce((acc, t) => acc + Number(t.monto), 0);
+
+    // Costos variables actuales del mes (insumos, combustible variable, etc.)
+    const costosVariablesActuales = transaccionesManuales
+      .filter((t) => t.tipo === "GASTO" && !t.esFijo)
+      .reduce((acc, t) => acc + Number(t.monto), 0);
+
+    // Margen de contribución (%): (Ventas - Costos Variables) / Ventas
+    const margenContribucionPct =
+      totalIngresos > 0 && costosVariablesActuales > 0
+        ? Math.max(0.1, (totalIngresos - costosVariablesActuales) / totalIngresos)
+        : 0.65; // Estándar del 65% en vending de café si aún no hay egresos variables registrados
+
+    // Punto de equilibrio en dinero ($ COP): Gastos Fijos / Margen de Contribución %
+    const puntoEquilibrioDinero =
+      margenContribucionPct > 0
+        ? Math.round(gastosFijosTotales / margenContribucionPct)
+        : 0;
+
+    // Precio promedio por taza
+    const precioPromedioTaza =
+      tazasActuales > 0 ? Math.round(totalIngresos / tazasActuales) : 2500;
+
+    // Costo variable promedio por taza
+    const costoVariablePromedioTaza =
+      tazasActuales > 0 && costosVariablesActuales > 0
+        ? Math.round(costosVariablesActuales / tazasActuales)
+        : 850;
+
+    const margenContribucionTaza = Math.max(
+      100,
+      precioPromedioTaza - costoVariablePromedioTaza
+    );
+
+    // Punto de equilibrio en tazas: Gastos Fijos / Margen de Contribución por Taza
+    const puntoEquilibrioTazas =
+      margenContribucionTaza > 0
+        ? Math.ceil(gastosFijosTotales / margenContribucionTaza)
+        : 0;
+
+    const porcentajeAlcanzado =
+      puntoEquilibrioDinero > 0
+        ? (totalIngresos / puntoEquilibrioDinero) * 100
+        : 0;
+
+    const diferenciaDinero = totalIngresos - puntoEquilibrioDinero;
+    const diferenciaTazas = tazasActuales - puntoEquilibrioTazas;
+    const estaEnEquilibrio =
+      totalIngresos >= puntoEquilibrioDinero && puntoEquilibrioDinero > 0;
+
+    const puntoEquilibrio: PuntoEquilibrioData = {
+      gastosFijosTotales,
+      ventasActuales: totalIngresos,
+      costosVariablesActuales,
+      margenContribucionPct,
+      puntoEquilibrioDinero,
+      tazasActuales,
+      precioPromedioTaza,
+      costoVariablePromedioTaza,
+      margenContribucionTaza,
+      puntoEquilibrioTazas,
+      porcentajeAlcanzado,
+      diferenciaDinero,
+      diferenciaTazas,
+      estaEnEquilibrio,
+    };
+
+    const gastosFijos: GastoFijoItem[] = gastosFijosDb.map((gf) => ({
+      id: gf.id,
+      concepto: gf.concepto,
+      categoria: gf.categoria,
+      categoriaLabel: LABELS_CATEGORIAS[gf.categoria] || gf.categoria,
+      monto: Number(gf.monto),
+      diaCobro: gf.diaCobro || 1,
+      activo: gf.activo,
+      descripcion: gf.descripcion,
+    }));
+
     return {
       success: true,
       data: {
@@ -191,6 +321,8 @@ export async function obtenerResumenContable(filtros?: {
           efectivo: efectivoTotal,
           transferencia: transferenciaTotal,
         },
+        gastosFijos,
+        puntoEquilibrio,
       },
     };
   } catch (error: any) {
@@ -213,6 +345,7 @@ export async function crearTransaccion(formData: FormData) {
     const referencia = formData.get("referencia")?.toString().trim() || null;
     const fechaRaw = formData.get("fecha")?.toString();
     const metodoPago = (formData.get("metodoPago")?.toString() as MetodoPago) || MetodoPago.EFECTIVO;
+    const esFijo = formData.get("esFijo") === "true" || formData.get("esFijo") === "on";
 
     if (!tipo || !categoria || !montoRaw || !descripcion) {
       return { success: false, error: "Todos los campos obligatorios deben ser diligenciados" };
@@ -233,6 +366,7 @@ export async function crearTransaccion(formData: FormData) {
         descripcion,
         referencia,
         metodoPago,
+        esFijo,
         fecha,
         creadoPorId: currentUser.id,
       },
@@ -268,3 +402,105 @@ export async function eliminarTransaccion(id: string) {
     return { success: false, error: error.message || "Error al eliminar la transacción" };
   }
 }
+
+// ========================================================
+// ACCIONES PARA GASTOS FIJOS Y ESTRUCTURA DE COSTOS
+// ========================================================
+
+export async function obtenerGastosFijos() {
+  await requireAdmin();
+
+  try {
+    const gastosFijos = await prisma.gastoFijo.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      success: true,
+      data: gastosFijos.map((gf) => ({
+        id: gf.id,
+        concepto: gf.concepto,
+        categoria: gf.categoria,
+        categoriaLabel: LABELS_CATEGORIAS[gf.categoria] || gf.categoria,
+        monto: Number(gf.monto),
+        diaCobro: gf.diaCobro || 1,
+        activo: gf.activo,
+        descripcion: gf.descripcion,
+      })),
+    };
+  } catch (error: any) {
+    console.error("[obtenerGastosFijos] Error:", error);
+    return { success: false, error: error.message || "Error al obtener gastos fijos" };
+  }
+}
+
+export async function guardarGastoFijo(formData: FormData) {
+  await requireAdmin();
+
+  try {
+    const id = formData.get("id")?.toString();
+    const concepto = formData.get("concepto")?.toString().trim();
+    const categoria = formData.get("categoria")?.toString() as CategoriaTransaccion;
+    const montoRaw = formData.get("monto")?.toString();
+    const diaCobro = parseInt(formData.get("diaCobro")?.toString() || "1", 10);
+    const descripcion = formData.get("descripcion")?.toString().trim() || null;
+    const activo = formData.get("activo") === "false" ? false : true;
+
+    if (!concepto || !montoRaw) {
+      return { success: false, error: "Concepto y monto son obligatorios" };
+    }
+
+    const monto = parseFloat(montoRaw);
+    if (isNaN(monto) || monto <= 0) {
+      return { success: false, error: "El monto debe ser mayor a cero" };
+    }
+
+    if (id) {
+      await prisma.gastoFijo.update({
+        where: { id },
+        data: {
+          concepto,
+          categoria: categoria || CategoriaTransaccion.SERVICIOS_ARRIENDO,
+          monto,
+          diaCobro,
+          activo,
+          descripcion,
+        },
+      });
+    } else {
+      await prisma.gastoFijo.create({
+        data: {
+          concepto,
+          categoria: categoria || CategoriaTransaccion.SERVICIOS_ARRIENDO,
+          monto,
+          diaCobro,
+          activo,
+          descripcion,
+        },
+      });
+    }
+
+    revalidatePath("/admin/contabilidad");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[guardarGastoFijo] Error:", error);
+    return { success: false, error: error.message || "Error al guardar el gasto fijo" };
+  }
+}
+
+export async function eliminarGastoFijo(id: string) {
+  await requireAdmin();
+
+  try {
+    await prisma.gastoFijo.delete({
+      where: { id },
+    });
+
+    revalidatePath("/admin/contabilidad");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[eliminarGastoFijo] Error:", error);
+    return { success: false, error: error.message || "Error al eliminar el gasto fijo" };
+  }
+}
+

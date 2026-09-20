@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Settings,
+  Scale,
 } from "lucide-react";
 import {
   ResumenContable,
@@ -26,6 +28,8 @@ import {
   obtenerResumenContable,
 } from "@/actions/contabilidad";
 import { RegistrarTransaccionModal } from "./RegistrarTransaccionModal";
+import { GastosFijosModal } from "./GastosFijosModal";
+import { PuntoEquilibrioCard } from "./PuntoEquilibrioCard";
 
 interface ContabilidadViewProps {
   initialData: ResumenContable;
@@ -61,6 +65,7 @@ export default function ContabilidadView({
   const [busqueda, setBusqueda] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [tipoModal, setTipoModal] = useState<"GASTO" | "INGRESO">("GASTO");
+  const [modalGastosFijosAbierto, setModalGastosFijosAbierto] = useState(false);
 
   const [isPending, startTransition] = useTransition();
 
@@ -158,6 +163,16 @@ export default function ContabilidadView({
           {/* Botones Registrar */}
           <button
             type="button"
+            onClick={() => setModalGastosFijosAbierto(true)}
+            className="px-3.5 py-2 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-bold rounded-xl shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
+            title="Administrar arriendos, nómina base y costos fijos"
+          >
+            <Settings className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>⚙️ Gastos Fijos</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               setTipoModal("GASTO");
               setModalAbierto(true);
@@ -181,6 +196,14 @@ export default function ContabilidadView({
           </button>
         </div>
       </div>
+
+      {/* Tarjeta de Punto de Equilibrio (Break-Even) */}
+      {data.puntoEquilibrio && (
+        <PuntoEquilibrioCard
+          puntoEquilibrio={data.puntoEquilibrio}
+          onConfigurarGastosFijos={() => setModalGastosFijosAbierto(true)}
+        />
+      )}
 
       {/* KPI Cards de Finanzas */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -540,6 +563,22 @@ export default function ContabilidadView({
           onClose={() => {
             setModalAbierto(false);
             // Recargar datos
+            startTransition(async () => {
+              const res = await obtenerResumenContable({ mes, anio });
+              if (res.success && res.data) {
+                setData(res.data);
+              }
+            });
+          }}
+        />
+      )}
+
+      {/* Modal de Gastos Fijos */}
+      {modalGastosFijosAbierto && (
+        <GastosFijosModal
+          gastosFijos={data.gastosFijos || []}
+          onClose={() => setModalGastosFijosAbierto(false)}
+          onUpdated={() => {
             startTransition(async () => {
               const res = await obtenerResumenContable({ mes, anio });
               if (res.success && res.data) {
