@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { X, Building2, Phone, MapPin, User, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { actualizarCliente } from "@/actions/admin";
+import { X, Building2, Phone, MapPin, User, CheckCircle2, AlertCircle, Loader2, Trash2 } from "lucide-react";
+import { actualizarCliente, eliminarCliente } from "@/actions/admin";
 
 interface EditarClienteModalProps {
   cliente: {
@@ -26,6 +26,27 @@ export const EditarClienteModal: React.FC<EditarClienteModalProps> = ({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
+  const handleEliminar = async () => {
+    setIsDeleting(true);
+    setError(null);
+    try {
+      const res = await eliminarCliente(cliente.id);
+      if (res.success) {
+        onClose();
+      } else {
+        setError(res.error || "Error al eliminar el cliente");
+        setShowConfirmDelete(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Ocurrió un error inesperado al eliminar el cliente");
+      setShowConfirmDelete(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -222,30 +243,76 @@ export const EditarClienteModal: React.FC<EditarClienteModalProps> = ({
             </label>
           </div>
 
+          {/* Confirmación de Eliminación */}
+          {showConfirmDelete && (
+            <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-red-700 dark:text-red-300">
+                  <p className="font-bold">¿Seguro que deseas eliminar este cliente?</p>
+                  <p className="text-[11px] text-red-600/90 dark:text-red-400/90 mt-0.5">
+                    Esta acción desvinculará sus máquinas asignadas (enviándolas a Bodega) y eliminará el registro de forma permanente.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmDelete(false)}
+                  disabled={isDeleting}
+                  className="px-2.5 py-1 text-xs font-semibold text-stone-600 hover:text-stone-800 dark:text-stone-300 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-lg hover:bg-stone-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEliminar}
+                  disabled={isDeleting}
+                  className="px-3 py-1 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-1 shadow-sm transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>Sí, Eliminar Cliente</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Botones de Acción */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
+          <div className="pt-2 flex items-center justify-between gap-2 border-t border-stone-100 dark:border-stone-800">
             <button
               type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="py-2 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl transition-all"
+              onClick={() => setShowConfirmDelete(true)}
+              disabled={isPending || isDeleting || showConfirmDelete}
+              className="py-2 px-3 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-all font-semibold flex items-center gap-1.5 text-xs disabled:opacity-40"
             >
-              Cancelar
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Eliminar Cliente</span>
             </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="py-2 px-5 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Guardando...</span>
-                </>
-              ) : (
-                <span>Guardar Cambios</span>
-              )}
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending || isDeleting}
+                className="py-2 px-4 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isPending || isDeleting}
+                className="py-2 px-5 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  <span>Guardar Cambios</span>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -31,7 +31,7 @@ import { EditarMaquinaModal } from "./EditarMaquinaModal";
 import { CrearClienteModal } from "./CrearClienteModal";
 import { CrearMaquinaModal } from "./CrearMaquinaModal";
 import { AsignarMaquinaModal } from "./AsignarMaquinaModal";
-import { eliminarMaquina, habilitarReliquidacionHoy } from "@/actions/admin";
+import { eliminarCliente, eliminarMaquina, habilitarReliquidacionHoy } from "@/actions/admin";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
 export interface BebidaConfigItem {
@@ -112,6 +112,8 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
   const [selectedMaquinaParaEditar, setSelectedMaquinaParaEditar] = useState<MaquinaItem | null>(null);
   const [maquinaAEliminar, setMaquinaAEliminar] = useState<MaquinaItem | null>(null);
   const [isDeletingMaquina, setIsDeletingMaquina] = useState(false);
+  const [clienteAEliminar, setClienteAEliminar] = useState<ClienteItem | null>(null);
+  const [isDeletingCliente, setIsDeletingCliente] = useState(false);
   const [mensaje, setMensaje] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
 
   // Estadísticas KPI
@@ -196,6 +198,28 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
       setMensaje({
         tipo: "error",
         texto: res.error || "Error al procesar la máquina.",
+      });
+    }
+  };
+
+  const handleConfirmarEliminarCliente = async () => {
+    if (!clienteAEliminar) return;
+    setIsDeletingCliente(true);
+    setMensaje(null);
+
+    const res = await eliminarCliente(clienteAEliminar.id);
+    setIsDeletingCliente(false);
+
+    if (res.success) {
+      setMensaje({
+        tipo: "success",
+        texto: res.message || `Cliente ${clienteAEliminar.razonSocial} eliminado correctamente.`,
+      });
+      setClienteAEliminar(null);
+    } else {
+      setMensaje({
+        tipo: "error",
+        texto: res.error || "Error al eliminar el cliente.",
       });
     }
   };
@@ -518,6 +542,16 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                     title="Editar datos del cliente"
                   >
                     <Pencil className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                  </button>
+
+                  {/* Botón Eliminar Cliente */}
+                  <button
+                    type="button"
+                    onClick={() => setClienteAEliminar(c)}
+                    className="p-1.5 bg-stone-100 hover:bg-rose-50 dark:bg-stone-800 dark:hover:bg-rose-950/40 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl text-xs font-semibold flex items-center transition-colors border border-stone-200 dark:border-stone-700 shadow-2xs"
+                    title="Eliminar cliente permanentemente"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -895,6 +929,52 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                 type="button"
                 onClick={() => setMaquinaAEliminar(null)}
                 disabled={isDeletingMaquina}
+                className="w-full py-2.5 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl text-xs transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación para Eliminar Cliente */}
+      {clienteAEliminar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-base text-stone-900 dark:text-white">
+                ¿Eliminar Cliente?
+              </h3>
+              <p className="text-xs text-stone-500">
+                Se eliminará permanentemente a <strong className="text-stone-800 dark:text-stone-200">{clienteAEliminar.razonSocial}</strong> ({clienteAEliminar.sede}).
+              </p>
+              {clienteAEliminar.maquinas && clienteAEliminar.maquinas.length > 0 && (
+                <div className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 text-left">
+                  ⚠️ Este cliente tiene <strong>{clienteAEliminar.maquinas.length} máquina(s)</strong> asignada(s). Serán desvinculadas y trasladadas a Bodega automáticamente.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={handleConfirmarEliminarCliente}
+                disabled={isDeletingCliente}
+                className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingCliente && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Eliminar Permanentemente</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setClienteAEliminar(null)}
+                disabled={isDeletingCliente}
                 className="w-full py-2.5 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-semibold rounded-xl text-xs transition-colors"
               >
                 Cancelar

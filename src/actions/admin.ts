@@ -821,6 +821,71 @@ export async function actualizarCliente(formData: FormData) {
   }
 }
 
+export async function eliminarCliente(clienteId: string) {
+  await requireAdmin();
+
+  try {
+    if (!clienteId) {
+      return { success: false, error: "ID de cliente no especificado" };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Desvincular máquinas asociadas y enviarlas a bodega
+      await tx.maquina.updateMany({
+        where: { clienteId },
+        data: {
+          clienteId: null,
+          activa: false,
+          rutaId: null,
+          ubicacion: "En Bodega / Taller",
+        } as any,
+      });
+
+      // 2. Desvincular usuarios asignados a este cliente
+      await tx.user.updateMany({
+        where: { clienteId },
+        data: { clienteId: null },
+      });
+
+      // 3. Eliminar liquidaciones asociadas (y en cascada sus detalles y movimientos de inventario)
+      const liquidaciones = await tx.liquidacion.findMany({
+        where: { clienteId },
+        select: { id: true },
+      });
+
+      if (liquidaciones.length > 0) {
+        const liqIds = liquidaciones.map((l) => l.id);
+        await tx.movimientoInventario.deleteMany({
+          where: { liquidacionId: { in: liqIds } },
+        });
+        await tx.detalleLiquidacion.deleteMany({
+          where: { liquidacionId: { in: liqIds } },
+        });
+        await tx.liquidacion.deleteMany({
+          where: { clienteId },
+        });
+      }
+
+      // 4. Eliminar visitas extraordinarias asociadas
+      await tx.visitaExtraordinaria.deleteMany({
+        where: { clienteId },
+      });
+
+      // 5. Eliminar cliente permanentemente
+      await tx.cliente.delete({
+        where: { id: clienteId },
+      });
+    });
+
+    revalidatePath("/admin/clientes");
+    revalidatePath("/admin");
+    return { success: true, message: "Cliente eliminado correctamente" };
+  } catch (error: any) {
+    console.error("[eliminarCliente] Error:", error);
+    return { success: false, error: error.message || "Error al eliminar el cliente" };
+  }
+}
+
 export async function crearMaquina(formData: FormData) {
   await requireAdmin();
 
