@@ -10,9 +10,7 @@ import {
   BEBIDAS_CATALOGO,
   TipoBebidaEnum,
 } from "@/types/liquidacion";
-import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
-import { LiquidacionReceiptPdf } from "@/components/pdf/LiquidacionReceiptPdf";
 import { formatFechaColombia } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -631,6 +629,8 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     let reciboPdfUrl = `${baseUrl}/api/liquidaciones/${liquidacionId}/pdf`;
 
     try {
+      const { renderToBuffer } = await import("@react-pdf/renderer");
+      const { LiquidacionReceiptPdf } = await import("@/components/pdf/LiquidacionReceiptPdf");
       const pdfElement = React.createElement(LiquidacionReceiptPdf, { data: pdfData }) as any;
       const pdfBuffer = await renderToBuffer(pdfElement);
       const uploadedUrl = await uploadPdfReceipt(pdfBuffer, consecutivoGenerado);

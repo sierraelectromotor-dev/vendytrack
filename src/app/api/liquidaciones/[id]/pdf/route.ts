@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import React from "react";
-import { renderToBuffer } from "@react-pdf/renderer";
-import { LiquidacionReceiptPdf } from "@/components/pdf/LiquidacionReceiptPdf";
 import { formatFechaColombia } from "@/lib/utils";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 
@@ -20,19 +18,21 @@ export async function GET(
     // Verificar autenticación
     const user = await getCurrentUser();
     if (!user) {
-      return new Response('No autorizado', { status: 401 });
+      return new Response("No autorizado", { status: 401 });
     }
 
     // Buscar la liquidación en Prisma
-    const liq = await prisma.liquidacion.findUnique({
-      where: { id: liquidacionId },
-      include: {
-        cliente: true,
-        maquina: true,
-        operador: true,
-        detalles: true,
-      },
-    }).catch(() => null);
+    const liq = await prisma.liquidacion
+      .findUnique({
+        where: { id: liquidacionId },
+        include: {
+          cliente: true,
+          maquina: true,
+          operador: true,
+          detalles: true,
+        },
+      })
+      .catch(() => null);
 
     if (!liq) {
       return NextResponse.json(
@@ -41,13 +41,14 @@ export async function GET(
       );
     }
 
-    // Verificar autorización: ADMIN, operador que liquidó, o cliente propietario
+    // Verificar autorización: ADMIN, SUPERADMIN, operador que liquidó, o cliente propietario
     if (
-      user.rol !== 'ADMIN' &&
+      user.rol !== "ADMIN" &&
+      user.rol !== "SUPERADMIN" &&
       user.id !== liq.operadorId &&
       user.clienteId !== liq.clienteId
     ) {
-      return new Response('Acceso denegado', { status: 403 });
+      return new Response("Acceso denegado", { status: 403 });
     }
 
     const nombreBebidasMap = Object.fromEntries(
@@ -94,6 +95,10 @@ export async function GET(
       firmaClienteUrl: liq.firmaClienteUrl,
       notas: liq.notas || undefined,
     };
+
+    // Importación dinámica para evitar que Next.js evalúe el módulo pesado durante el build
+    const { renderToBuffer } = await import("@react-pdf/renderer");
+    const { LiquidacionReceiptPdf } = await import("@/components/pdf/LiquidacionReceiptPdf");
 
     const pdfElement = React.createElement(LiquidacionReceiptPdf, { data: pdfData }) as any;
     const pdfBuffer = await renderToBuffer(pdfElement);
