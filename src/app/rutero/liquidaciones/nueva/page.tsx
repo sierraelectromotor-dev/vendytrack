@@ -1,5 +1,7 @@
 import { MobileLiquidacionForm } from "@/components/liquidacion/MobileLiquidacionForm";
 
+export const dynamic = "force-dynamic";
+
 export default function NuevaLiquidacionPage({
   searchParams,
 }: {

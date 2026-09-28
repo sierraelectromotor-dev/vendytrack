@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { Users } from "lucide-react";
 import { UsuariosManager } from "@/components/admin/UsuariosManager";
 
+export const dynamic = "force-dynamic";
+
 export default async function RuterosPage() {
   const [usuariosRes, currentUser] = await Promise.all([
     obtenerUsuarios(),

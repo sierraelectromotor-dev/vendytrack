@@ -1,9 +1,11 @@
-﻿import { obtenerEmpresas } from "@/actions/superadmin";
+import { obtenerEmpresas } from "@/actions/superadmin";
 import { EmpresasClient } from "./EmpresasClient";
 
 export const metadata = {
   title: "Gestión de Empresas | Superadmin",
 };
+
+export const dynamic = "force-dynamic";
 
 export default async function EmpresasPage() {
   const result = await obtenerEmpresas();

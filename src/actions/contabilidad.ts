@@ -93,9 +93,8 @@ export async function obtenerResumenContable(filtros?: {
   tipo?: string;
   categoria?: string;
 }): Promise<{ success: boolean; data?: ResumenContable; error?: string }> {
-  const currentUser = await requireAdmin();
-
   try {
+    const currentUser = await requireAdmin();
     const hoy = new Date();
     const mes = filtros?.mes !== undefined ? filtros.mes : hoy.getMonth(); // 0 a 11
     const anio = filtros?.anio !== undefined ? filtros.anio : hoy.getFullYear();
@@ -430,9 +429,9 @@ export async function eliminarTransaccion(id: string) {
 // ========================================================
 
 export async function obtenerGastosFijos() {
-  const currentUser = await requireAdmin();
-
   try {
+    const currentUser = await requireAdmin();
+
     const gastosFijos = await prisma.gastoFijo.findMany({
         where: { empresaId: currentUser.empresaId },
         orderBy: { createdAt: "desc" },

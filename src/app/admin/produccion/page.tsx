@@ -6,6 +6,8 @@ export const metadata = {
   title: "Producción - VendyTrack"
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function ProduccionPage() {
   const [formulasRes, insumos] = await Promise.all([
     getFormulas(),

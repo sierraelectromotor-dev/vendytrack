@@ -2,6 +2,8 @@ import React from "react";
 import { obtenerResumenContable } from "@/actions/contabilidad";
 import ContabilidadView from "@/components/admin/ContabilidadView";
 
+export const dynamic = "force-dynamic";
+
 export default async function ContabilidadPage() {
   const hoy = new Date();
   const mesActual = hoy.getMonth();
