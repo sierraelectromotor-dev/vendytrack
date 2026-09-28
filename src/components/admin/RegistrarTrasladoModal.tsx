@@ -13,6 +13,8 @@ import {
   ArrowRight,
   CreditCard,
   Wallet,
+  ArrowUpDown,
+  FileText,
 } from "lucide-react";
 import { obtenerCuentasBancarias } from "@/actions/cuentasBancarias";
 import { registrarTraslado } from "@/actions/traslados";
@@ -22,18 +24,17 @@ interface RegistrarTrasladoModalProps {
   onSuccess: () => void;
 }
 
-type ModoTraslado = "EFECTIVO_A_BANCO" | "BANCO_A_EFECTIVO" | "ENTRE_BANCOS";
-
 export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [modo, setModo] = useState<ModoTraslado>("EFECTIVO_A_BANCO");
   const [cuentas, setCuentas] = useState<any[]>([]);
   const [cargandoCuentas, setCargandoCuentas] = useState(true);
 
-  const [cuentaOrigenId, setCuentaOrigenId] = useState<string>("");
-  const [cuentaDestinoId, setCuentaDestinoId] = useState<string>("");
+  // Origen y Destino: "EFECTIVO" o el id de una cuenta bancaria
+  const [origen, setOrigen] = useState<string>("EFECTIVO");
+  const [destino, setDestino] = useState<string>("");
+
   const [monto, setMonto] = useState<string>("");
   const [fecha, setFecha] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -53,17 +54,34 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
         const activas = res.data.filter((c: any) => c.activa);
         setCuentas(activas);
         if (activas.length > 0) {
-          setCuentaDestinoId(activas[0].id);
-          setCuentaOrigenId(activas[0].id);
-          if (activas.length > 1) {
-            setCuentaDestinoId(activas[1].id);
-          }
+          // Destino por defecto: la primera cuenta bancaria activa
+          setDestino(activas[0].id);
         }
       }
       setCargandoCuentas(false);
     }
     loadCuentas();
   }, []);
+
+  const formatearDinero = (val: number) => {
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      maximumFractionDigits: 0,
+    }).format(val);
+  };
+
+  const handleIntercambiar = () => {
+    setError(null);
+    const prevOrigen = origen;
+    const prevDestino = destino;
+    setOrigen(prevDestino);
+    setDestino(prevOrigen);
+  };
+
+  // Obtener cuenta de origen y destino si son bancos
+  const cuentaOrigenObj = cuentas.find((c) => c.id === origen);
+  const cuentaDestinoObj = cuentas.find((c) => c.id === destino);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -75,47 +93,32 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
       return;
     }
 
-    let origenTipo: "EFECTIVO" | "BANCO" = "EFECTIVO";
-    let destinoTipo: "EFECTIVO" | "BANCO" = "BANCO";
-    let origenId: string | null = null;
-    let destinoId: string | null = null;
-
-    if (modo === "EFECTIVO_A_BANCO") {
-      origenTipo = "EFECTIVO";
-      destinoTipo = "BANCO";
-      destinoId = cuentaDestinoId;
-      if (!destinoId) {
-        setError("Selecciona la cuenta bancaria de destino.");
-        return;
-      }
-    } else if (modo === "BANCO_A_EFECTIVO") {
-      origenTipo = "BANCO";
-      destinoTipo = "EFECTIVO";
-      origenId = cuentaOrigenId;
-      if (!origenId) {
-        setError("Selecciona la cuenta bancaria de origen.");
-        return;
-      }
-    } else {
-      origenTipo = "BANCO";
-      destinoTipo = "BANCO";
-      origenId = cuentaOrigenId;
-      destinoId = cuentaDestinoId;
-      if (!origenId || !destinoId) {
-        setError("Selecciona ambas cuentas bancarias.");
-        return;
-      }
-      if (origenId === destinoId) {
-        setError("La cuenta de origen y de destino no pueden ser la misma.");
-        return;
-      }
+    if (!origen) {
+      setError("Selecciona el fondo o cuenta de origen.");
+      return;
     }
+
+    if (!destino) {
+      setError("Selecciona el fondo o cuenta de destino.");
+      return;
+    }
+
+    if (origen === destino) {
+      setError("El origen y el destino no pueden ser el mismo fondo o cuenta.");
+      return;
+    }
+
+    const origenTipo = origen === "EFECTIVO" ? "EFECTIVO" : "BANCO";
+    const cuentaOrigenId = origen === "EFECTIVO" ? null : origen;
+
+    const destinoTipo = destino === "EFECTIVO" ? "EFECTIVO" : "BANCO";
+    const cuentaDestinoId = destino === "EFECTIVO" ? null : destino;
 
     const formData = new FormData();
     formData.append("origenTipo", origenTipo);
-    if (origenId) formData.append("cuentaOrigenId", origenId);
+    if (cuentaOrigenId) formData.append("cuentaOrigenId", cuentaOrigenId);
     formData.append("destinoTipo", destinoTipo);
-    if (destinoId) formData.append("cuentaDestinoId", destinoId);
+    if (cuentaDestinoId) formData.append("cuentaDestinoId", cuentaDestinoId);
     formData.append("monto", valorMonto.toString());
     formData.append("fecha", fecha);
     if (concepto.trim()) formData.append("concepto", concepto.trim());
@@ -136,20 +139,20 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
         {/* Cabecera */}
-        <div className="flex items-center justify-between p-4 border-b border-stone-200 dark:border-stone-800 bg-blue-500/10 dark:bg-blue-950/30">
+        <div className="flex items-center justify-between p-4 border-b border-stone-200 dark:border-stone-800 bg-blue-500/10 dark:bg-blue-950/30 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
               <ArrowLeftRight className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-stone-900 dark:text-white text-sm">
-                Registrar Traslado de Fondos
+                Traslado entre Cuentas / Fondos
               </h3>
               <p className="text-[11px] text-stone-500">
-                Movimiento interno entre efectivo y bancos o entre cuentas
+                Mueve fondos entre efectivo y bancos, o entre cuentas bancarias
               </p>
             </div>
           </div>
@@ -162,47 +165,8 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
           </button>
         </div>
 
-        {/* Selector de Tipo de Traslado */}
-        <div className="p-4 pb-0">
-          <div className="grid grid-cols-3 gap-2 p-1 bg-stone-100 dark:bg-stone-800/80 rounded-xl text-center text-[11px] font-bold">
-            <button
-              type="button"
-              onClick={() => setModo("EFECTIVO_A_BANCO")}
-              className={`py-2 px-1.5 rounded-lg transition-all ${
-                modo === "EFECTIVO_A_BANCO"
-                  ? "bg-white dark:bg-stone-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                  : "text-stone-600 dark:text-stone-400 hover:text-stone-900"
-              }`}
-            >
-              Efectivo ➔ Banco
-            </button>
-            <button
-              type="button"
-              onClick={() => setModo("BANCO_A_EFECTIVO")}
-              className={`py-2 px-1.5 rounded-lg transition-all ${
-                modo === "BANCO_A_EFECTIVO"
-                  ? "bg-white dark:bg-stone-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                  : "text-stone-600 dark:text-stone-400 hover:text-stone-900"
-              }`}
-            >
-              Banco ➔ Efectivo
-            </button>
-            <button
-              type="button"
-              onClick={() => setModo("ENTRE_BANCOS")}
-              className={`py-2 px-1.5 rounded-lg transition-all ${
-                modo === "ENTRE_BANCOS"
-                  ? "bg-white dark:bg-stone-900 text-blue-600 dark:text-blue-400 shadow-xs"
-                  : "text-stone-600 dark:text-stone-400 hover:text-stone-900"
-              }`}
-            >
-              Entre Bancos
-            </button>
-          </div>
-        </div>
-
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 text-xs">
+        {/* Formulario con scroll independiente si es pantalla pequeña */}
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-red-600 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -213,136 +177,171 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
           {success && (
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Traslado de fondos registrado exitosamente</span>
+              <span>Traslado registrado exitosamente</span>
             </div>
           )}
 
-          {/* Bloque Visual de Origen y Destino */}
-          <div className="p-3.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-              {/* Origen */}
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block mb-1">
-                  Origen de los Fondos
-                </span>
-                {modo === "EFECTIVO_A_BANCO" ? (
-                  <div className="p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl flex items-center gap-2 text-stone-800 dark:text-stone-200 font-bold">
-                    <Wallet className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Caja General (Efectivo)</span>
-                  </div>
-                ) : (
+          {/* Bloque Unificado: Origen ➔ Destino */}
+          <div className="p-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/80 rounded-2xl space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Selector Origen */}
+              <div className="flex-1 space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                  <span>Desde (Origen) *</span>
+                </label>
+                <div className="relative">
                   <select
-                    value={cuentaOrigenId}
-                    onChange={(e) => setCuentaOrigenId(e.target.value)}
-                    disabled={cargandoCuentas || cuentas.length === 0}
-                    className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-800 dark:text-stone-200 font-bold outline-none focus:border-blue-500"
+                    value={origen}
+                    onChange={(e) => setOrigen(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-800 dark:text-stone-200 font-bold outline-none focus:border-blue-500 shadow-xs appearance-none pr-8 text-xs cursor-pointer"
                   >
-                    {cuentas.length === 0 ? (
-                      <option value="">No hay cuentas bancarias registradas</option>
-                    ) : (
-                      cuentas.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.banco} ({c.numeroCuenta})
-                        </option>
-                      ))
+                    <option value="EFECTIVO">💵 Caja General (Efectivo)</option>
+                    {cuentas.length > 0 && (
+                      <optgroup label="Cuentas Bancarias">
+                        {cuentas.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            🏦 {c.banco} ({c.tipoCuenta || "Cuenta"}) - {c.numeroCuenta}
+                          </option>
+                        ))}
+                      </optgroup>
                     )}
                   </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400">
+                    ▼
+                  </div>
+                </div>
+                {cuentaOrigenObj && (
+                  <span className="text-[10px] text-stone-500 dark:text-stone-400 block pl-0.5">
+                    Saldo registrado: <strong className="text-emerald-600 dark:text-emerald-400">{formatearDinero(Number(cuentaOrigenObj.saldoActual || 0))}</strong>
+                  </span>
                 )}
               </div>
 
-              {/* Destino */}
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block mb-1">
-                  Destino de los Fondos
-                </span>
-                {modo === "BANCO_A_EFECTIVO" ? (
-                  <div className="p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl flex items-center gap-2 text-stone-800 dark:text-stone-200 font-bold">
-                    <Wallet className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Caja General (Efectivo)</span>
-                  </div>
-                ) : (
+              {/* Botón Intercambiar Origen / Destino */}
+              <div className="flex items-center justify-center pt-2 sm:pt-4">
+                <button
+                  type="button"
+                  onClick={handleIntercambiar}
+                  className="p-2 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-500 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-800 shadow-xs transition-all active:scale-95"
+                  title="Invertir origen y destino"
+                >
+                  <ArrowUpDown className="w-4 h-4 sm:hidden" />
+                  <ArrowLeftRight className="w-4 h-4 hidden sm:block" />
+                </button>
+              </div>
+
+              {/* Selector Destino */}
+              <div className="flex-1 space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                  <span>Hacia (Destino) *</span>
+                </label>
+                <div className="relative">
                   <select
-                    value={cuentaDestinoId}
-                    onChange={(e) => setCuentaDestinoId(e.target.value)}
-                    disabled={cargandoCuentas || cuentas.length === 0}
-                    className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-800 dark:text-stone-200 font-bold outline-none focus:border-blue-500"
+                    value={destino}
+                    onChange={(e) => setDestino(e.target.value)}
+                    required
+                    className="w-full p-2.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-800 dark:text-stone-200 font-bold outline-none focus:border-blue-500 shadow-xs appearance-none pr-8 text-xs cursor-pointer"
                   >
-                    {cuentas.length === 0 ? (
-                      <option value="">No hay cuentas bancarias registradas</option>
-                    ) : (
-                      cuentas.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.banco} ({c.numeroCuenta})
-                        </option>
-                      ))
+                    <option value="" disabled>Seleccionar destino...</option>
+                    <option value="EFECTIVO">💵 Caja General (Efectivo)</option>
+                    {cuentas.length > 0 && (
+                      <optgroup label="Cuentas Bancarias">
+                        {cuentas.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            🏦 {c.banco} ({c.tipoCuenta || "Cuenta"}) - {c.numeroCuenta}
+                          </option>
+                        ))}
+                      </optgroup>
                     )}
                   </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400">
+                    ▼
+                  </div>
+                </div>
+                {cuentaDestinoObj && (
+                  <span className="text-[10px] text-stone-500 dark:text-stone-400 block pl-0.5">
+                    Saldo registrado: <strong className="text-emerald-600 dark:text-emerald-400">{formatearDinero(Number(cuentaDestinoObj.saldoActual || 0))}</strong>
+                  </span>
                 )}
               </div>
             </div>
 
-            {cuentas.length === 0 && modo !== "BANCO_A_EFECTIVO" && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400 italic">
-                ⚠️ Para realizar traslados con bancos debes registrar al menos una cuenta bancaria en el botón "Cuentas Bancarias".
+            {/* Aviso si Origen y Destino coinciden */}
+            {origen && destino && origen === destino && (
+              <p className="text-[11px] text-rose-500 dark:text-rose-400 font-bold flex items-center gap-1 pt-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                El origen y el destino no pueden ser el mismo fondo o cuenta.
               </p>
             )}
           </div>
 
-          {/* Monto y Fecha */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Monto del Traslado ($ COP) *
-              </label>
+          {/* Monto del Traslado */}
+          <div className="space-y-1">
+            <label className="font-bold text-stone-800 dark:text-stone-200 flex items-center justify-between">
+              <span>Monto a Trasladar ($ COP) *</span>
+              {parseFloat(monto) > 0 && (
+                <span className="text-blue-600 dark:text-blue-400 font-mono text-[11px]">
+                  {formatearDinero(parseFloat(monto))}
+                </span>
+              )}
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-stone-400 text-sm">
+                $
+              </span>
               <input
                 type="number"
                 step="any"
                 required
                 min="1"
-                placeholder="ej. 500000"
+                placeholder="ej. 350000"
                 value={monto}
                 onChange={(e) => setMonto(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500 font-bold text-sm"
+                className="w-full bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 pl-7 outline-none focus:border-blue-500 font-bold text-sm text-stone-900 dark:text-white"
               />
             </div>
+          </div>
 
-            <div>
-              <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
-                Fecha del Movimiento *
-              </label>
+          {/* Fecha del Movimiento */}
+          <div className="space-y-1">
+            <label className="font-semibold text-stone-700 dark:text-stone-300 block">
+              Fecha del Traslado *
+            </label>
+            <div className="relative">
               <input
                 type="date"
                 required
                 value={fecha}
                 onChange={(e) => setFecha(e.target.value)}
-                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500"
+                className="w-full bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500 text-stone-900 dark:text-white font-medium"
               />
             </div>
           </div>
 
-          {/* Concepto / Justificación */}
-          <div>
-            <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
+          {/* Concepto / Motivo */}
+          <div className="space-y-1">
+            <label className="font-semibold text-stone-700 dark:text-stone-300 block">
               Concepto / Motivo del Traslado
             </label>
             <input
               type="text"
               placeholder={
-                modo === "EFECTIVO_A_BANCO"
+                origen === "EFECTIVO"
                   ? "ej. Consignación recaudo de semana"
-                  : modo === "BANCO_A_EFECTIVO"
+                  : destino === "EFECTIVO"
                   ? "ej. Retiro para compras de insumos menores"
-                  : "ej. Transferencia por concentración de fondos"
+                  : "ej. Transferencia interbancaria por concentración de fondos"
               }
               value={concepto}
               onChange={(e) => setConcepto(e.target.value)}
-              className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500 font-medium"
+              className="w-full bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500 font-medium text-stone-900 dark:text-white"
             />
           </div>
 
-          {/* Referencia o Soporte */}
-          <div>
-            <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
+          {/* Referencia o Comprobante */}
+          <div className="space-y-1">
+            <label className="font-semibold text-stone-700 dark:text-stone-300 block">
               Número de Referencia / Comprobante (Opcional)
             </label>
             <input
@@ -350,11 +349,12 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
               placeholder="ej. Aprobación #192834 o Recibo de consignación"
               value={referencia}
               onChange={(e) => setReferencia(e.target.value)}
-              className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500"
+              className="w-full bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-blue-500 text-stone-900 dark:text-white"
             />
           </div>
 
-          <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-stone-200 dark:border-stone-800">
+          {/* Botones de acción */}
+          <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-stone-200 dark:border-stone-800">
             <button
               type="button"
               onClick={onClose}
@@ -364,11 +364,11 @@ export const RegistrarTrasladoModal: React.FC<RegistrarTrasladoModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isPending || (cuentas.length === 0 && modo !== "BANCO_A_EFECTIVO")}
-              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-50"
+              disabled={isPending || origen === destino || !monto || parseFloat(monto) <= 0}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>Confirmar Traslado</span>
+              <span>Registrar Traslado</span>
             </button>
           </div>
         </form>
