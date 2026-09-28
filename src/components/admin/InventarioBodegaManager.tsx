@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { formatCOP, formatFechaColombia } from "@/lib/utils";
+import { formatCOP, formatFechaColombia, formatFechaCorta } from "@/lib/utils";
 import {
   crearInsumo,
   cargarInsumosEstandar,
   registrarEntradaBodega,
   eliminarInsumo,
 } from "@/actions/admin";
+import { surtirMaquina, getMaquinas, getLotesForInsumo } from "@/actions/bodegas";
 import {
   Package,
   PlusCircle,
@@ -25,6 +26,8 @@ import {
   Pencil,
   Trash2,
   HelpCircle,
+  Send,
+  Coffee
 } from "lucide-react";
 import { EditarInsumoModal } from "./EditarInsumoModal";
 
@@ -36,6 +39,7 @@ export interface InsumoItem {
   stockActual: number;
   stockMinimo: number;
   costoPromedio: number;
+  precioVenta?: number | null;
 }
 
 export interface MovimientoItem {
@@ -64,6 +68,13 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
   const [isCreatingInsumo, setIsCreatingInsumo] = useState(false);
   const [selectedInsumoParaEditar, setSelectedInsumoParaEditar] = useState<InsumoItem | null>(null);
   const [insumoAEliminar, setInsumoAEliminar] = useState<InsumoItem | null>(null);
+  
+  // Surtir Maquina state
+  const [insumoASurtir, setInsumoASurtir] = useState<InsumoItem | null>(null);
+  const [maquinasSurtir, setMaquinasSurtir] = useState<any[]>([]);
+  const [lotesSurtir, setLotesSurtir] = useState<any[]>([]);
+  const [isSurtirLoading, setIsSurtirLoading] = useState(false);
+  
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadingStandard, setLoadingStandard] = useState(false);
   const [submittingInsumo, setSubmittingInsumo] = useState(false);
@@ -167,6 +178,45 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
         type: "error",
         text: res.error || "Error al eliminar el insumo.",
       });
+    }
+  };
+
+  const handleOpenSurtir = async (insumo: InsumoItem) => {
+    setInsumoASurtir(insumo);
+    setIsSurtirLoading(true);
+    try {
+      const [mqs, lts] = await Promise.all([
+        getMaquinas(),
+        getLotesForInsumo(insumo.id)
+      ]);
+      setMaquinasSurtir(mqs);
+      setLotesSurtir(lts);
+    } catch (e: any) {
+      setMessage({ type: "error", text: "Error al cargar datos para surtir." });
+    } finally {
+      setIsSurtirLoading(false);
+    }
+  };
+
+  const handleSubmitSurtir = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!insumoASurtir) return;
+    setIsSurtirLoading(true);
+    setMessage(null);
+
+    const formData = new FormData(e.currentTarget);
+    const maquinaId = formData.get("maquinaId") as string;
+    const loteId = formData.get("loteId") as string;
+    const cantidad = Number(formData.get("cantidad"));
+
+    const res = await surtirMaquina(maquinaId, loteId, insumoASurtir.id, cantidad);
+    setIsSurtirLoading(false);
+
+    if (res.success) {
+      setMessage({ type: "success", text: "Máquina surtida exitosamente." });
+      setInsumoASurtir(null);
+    } else {
+      setMessage({ type: "error", text: res.error || "Error al surtir la máquina." });
     }
   };
 
@@ -277,53 +327,46 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Explicación Didáctica del Costo Promedio Ponderado */}
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-stone-900 dark:to-stone-900/80 border border-amber-200/80 dark:border-amber-900/40 rounded-2xl p-4 text-xs space-y-2 text-stone-700 dark:text-stone-300">
-            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-bold text-xs">
-              <HelpCircle className="w-4 h-4 text-coffee-600 dark:text-amber-400 shrink-0" />
-              <span>¿Cómo se calcula el Costo Promedio en VendyTrack? (Método Promedio Ponderado)</span>
-            </div>
-            <p className="text-[11px] leading-relaxed text-stone-600 dark:text-stone-400">
-              Cada vez que registras una nueva compra de insumos a un precio distinto, el sistema actualiza automáticamente el costo unitario para que tus costos y márgenes de ganancia reflejen la realidad:
-            </p>
-            <div className="bg-white/90 dark:bg-stone-800/90 rounded-xl p-2.5 font-mono text-[11px] text-coffee-950 dark:text-amber-200 border border-amber-200/60 dark:border-stone-700 shadow-2xs">
-              Nuevo Costo Promedio = [ (Stock Previo × Costo Previo) + (Cantidad Entrada × Costo Compra) ] ÷ Nuevo Stock Total
-            </div>
-            <p className="text-[10px] text-stone-500 italic">
-              <strong>Ejemplo práctico:</strong> Si tienes 10 kg en bodega a $30.000 ($300.000) y compras 10 kg a $40.000 ($400.000), tendrás 20 kg valorados en $700.000. El nuevo costo promedio automático será <strong>$35.000 / kg</strong>.
-            </p>
-          </div>
+
 
           {/* Grid de Insumos en Bodega */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {insumos.map((i) => {
             const isLowStock = i.stockActual <= i.stockMinimo;
 
             return (
               <div
                 key={i.id}
-                className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-3 relative overflow-hidden group hover:border-coffee-300 transition-colors"
+                className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-3.5 shadow-sm space-y-2.5 relative overflow-hidden group hover:border-coffee-300 transition-colors flex flex-col justify-between"
               >
                 {isLowStock && (
-                  <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Stock Bajo
+                  <div className="absolute top-0 right-0 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg flex items-center gap-1">
+                    <AlertTriangle className="w-2.5 h-2.5" /> Stock Bajo
                   </div>
                 )}
 
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] font-mono font-bold text-coffee-600 dark:text-amber-400 block">
+                  <div className="min-w-0 pr-1">
+                    <span className="text-[9px] font-mono font-bold text-coffee-600 dark:text-amber-400 block truncate">
                       {i.codigo}
                     </span>
-                    <h3 className="text-sm font-bold text-stone-900 dark:text-white mt-0.5">
+                    <h3 className="text-xs font-bold text-stone-900 dark:text-white mt-0.5 leading-tight line-clamp-2">
                       {i.nombre}
                     </h3>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenSurtir(i)}
+                      className="p-1 text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors"
+                      title="Surtir Mǭquina"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => setSelectedInsumoParaEditar(i)}
-                      className="p-1.5 text-stone-400 hover:text-coffee-700 dark:hover:text-amber-300 hover:bg-coffee-50 dark:hover:bg-stone-800 rounded-lg transition-colors border border-transparent hover:border-coffee-200 dark:hover:border-stone-700 shadow-xs"
+                      className="p-1 text-stone-400 hover:text-coffee-700 dark:hover:text-amber-300 hover:bg-coffee-50 dark:hover:bg-stone-800 rounded transition-colors"
                       title="Editar insumo"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -331,7 +374,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                     <button
                       type="button"
                       onClick={() => setInsumoAEliminar(i)}
-                      className="p-1.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors border border-transparent hover:border-rose-200 dark:hover:border-rose-900 shadow-xs"
+                      className="p-1 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors"
                       title="Eliminar insumo"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -339,38 +382,46 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-stone-100 dark:border-stone-800 text-xs">
-                  <div>
-                    <span className="text-[11px] text-stone-500 block">Stock Actual</span>
-                    <span
-                      className={`text-lg font-black ${
-                        isLowStock
-                          ? "text-rose-600 dark:text-rose-400"
-                          : "text-stone-900 dark:text-white"
-                      }`}
-                    >
-                      {i.stockActual.toLocaleString("es-CO")}{" "}
-                      <span className="text-xs font-semibold text-stone-500">
-                        {i.unidadMedida.toLowerCase()}
+                <div className="grid grid-cols-3 gap-1.5 pt-1.5 border-t border-stone-100 dark:border-stone-800">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-stone-500 font-semibold mb-0.5">Stock Actual</span>
+                    <div className="flex items-baseline gap-0.5">
+                      <span
+                        className={`text-sm font-black tracking-tight ${
+                          isLowStock
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-stone-900 dark:text-white"
+                        }`}
+                      >
+                        {i.stockActual.toLocaleString("es-CO")}
                       </span>
+                      <span className="text-[9px] font-semibold text-stone-500">
+                        {i.unidadMedida.toLowerCase() === 'unidad' ? 'un.' : i.unidadMedida.toLowerCase()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-stone-500 font-semibold mb-0.5">Costo Prom.</span>
+                    <span className="text-[11px] font-bold text-stone-700 dark:text-stone-300">
+                      {formatCOP(i.costoPromedio)}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-[11px] text-stone-500 block">Costo Promedio</span>
-                    <span className="text-sm font-bold text-coffee-700 dark:text-amber-300">
-                      {formatCOP(i.costoPromedio)}
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-stone-500 font-semibold mb-0.5">Precio Venta</span>
+                    <span className="text-[11px] font-bold text-coffee-700 dark:text-amber-300">
+                      {(i as any).precioVenta ? formatCOP((i as any).precioVenta) : 'N/A'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1">
+                <div className="flex items-center justify-between text-[10px] text-stone-400 pt-1 border-t border-stone-50 dark:border-stone-800/50 mt-auto">
                   <span>
-                    Mínimo: <strong>{i.stockMinimo} {i.unidadMedida.toLowerCase()}</strong>
+                    M�nimo: <strong className="text-stone-600 dark:text-stone-300">{i.stockMinimo} {i.unidadMedida.toLowerCase() === 'unidad' ? 'un.' : i.unidadMedida.toLowerCase()}</strong>
                   </span>
                   {isLowStock ? (
-                    <span className="text-rose-500 font-semibold">Reponer urgente</span>
+                    <span className="text-rose-500 font-semibold flex items-center gap-0.5"><AlertTriangle className="w-2.5 h-2.5" /> Urgente</span>
                   ) : (
-                    <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                    <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
                       <CheckCircle2 className="w-3 h-3" /> Óptimo
                     </span>
                   )}
@@ -396,10 +447,10 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
         ) : (
           <form
             onSubmit={handleRegistrarCompra}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 text-xs"
           >
-            <div>
-              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
                 Insumo *
               </label>
               <select
@@ -415,9 +466,9 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
               </select>
             </div>
 
-            <div>
-              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                Cantidad Recibida *
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
+                Cant. *
               </label>
               <input
                 type="number"
@@ -429,9 +480,9 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
               />
             </div>
 
-            <div>
-              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                Costo Unitario ($ COP) *
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
+                Costo Un. ($) *
               </label>
               <input
                 type="number"
@@ -443,9 +494,33 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
               />
             </div>
 
-            <div>
-              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                Proveedor / Factura
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
+                Lote *
+              </label>
+              <input
+                type="text"
+                name="numeroLote"
+                placeholder="Ej. LOTE-123"
+                required
+                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
+              />
+            </div>
+
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
+                Vencimiento
+              </label>
+              <input
+                type="date"
+                name="fechaVencimiento"
+                className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600"
+              />
+            </div>
+
+            <div className="flex flex-col justify-end">
+              <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1 truncate">
+                Proveedor
               </label>
               <input
                 type="text"
@@ -495,14 +570,27 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800/60">
                 {movimientos.map((m) => {
-                  const isEntry = m.tipo === "ENTRADA_COMPRA";
+                  const isEntry = ["ENTRADA_COMPRA", "ENTRADA_PRODUCCION"].includes(m.tipo);
+                  
+                  const getLabel = (tipo: string) => {
+                    switch (tipo) {
+                      case "ENTRADA_COMPRA": return "Compra";
+                      case "SALIDA_TEORICA_LIQUIDACION": return "Salida Teórica";
+                      case "SALIDA_FISICA_REPOSICION": return "Reposición Física";
+                      case "TRASLADO_A_MAQUINA": return "Traslado a Máq.";
+                      case "ENTRADA_PRODUCCION": return "Producción";
+                      case "SALIDA_PRODUCCION": return "Materia Prima";
+                      default: return tipo;
+                    }
+                  };
+
                   return (
                     <tr
                       key={m.id}
                       className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30"
                     >
                       <td className="py-2.5 text-stone-500">
-                        {formatFechaColombia(m.fecha)}
+                        {formatFechaCorta(m.fecha)}
                       </td>
                       <td className="py-2.5 font-bold text-stone-800 dark:text-stone-200">
                         {m.insumoNombre}
@@ -520,7 +608,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                           ) : (
                             <TrendingDown className="w-2.5 h-2.5" />
                           )}
-                          {isEntry ? "Entrada / Compra" : "Salida Teórica"}
+                          {getLabel(m.tipo)}
                         </span>
                       </td>
                       <td className="py-2.5 text-right font-black">
@@ -534,7 +622,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                         {m.costoUnitario ? formatCOP(m.costoUnitario) : "-"}
                       </td>
                       <td className="py-2.5 text-stone-500">
-                        {m.referencia || "Visita de ruta"}
+                        {m.referencia || (m.tipo === "SALIDA_TEORICA_LIQUIDACION" ? "Visita de ruta" : "No detalla")}
                       </td>
                     </tr>
                   );
@@ -613,7 +701,7 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
                     Stock Inicial
@@ -641,15 +729,27 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
                 </div>
 
                 <div>
-                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
-                    Costo Compra ($)
+                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1" title="Costo Promedio">
+                    Costo ($)
                   </label>
                   <input
                     type="number"
                     step="any"
                     name="costoPromedio"
                     defaultValue="0"
-                    placeholder="ej. 35000"
+                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-coffee-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1" title="Precio Venta Directa">
+                    Venta ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    name="precioVenta"
+                    defaultValue="0"
                     className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-coffee-600"
                   />
                 </div>
@@ -752,6 +852,107 @@ export const InventarioBodegaManager: React.FC<InventarioBodegaManagerProps> = (
           </div>
         </div>
       )}
+
+      {/* Modal Surtir Máquina */}
+      {insumoASurtir && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
+              <div>
+                <h3 className="text-base font-black text-stone-900 dark:text-white flex items-center gap-2">
+                  <Coffee className="w-5 h-5 text-emerald-600" />
+                  Surtir a Máquina
+                </h3>
+                <span className="text-xs text-stone-400">
+                  Trasladar {insumoASurtir.nombre} a una máquina
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInsumoASurtir(null)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isSurtirLoading ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitSurtir} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                    Seleccionar Máquina *
+                  </label>
+                  <select
+                    name="maquinaId"
+                    required
+                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-emerald-600"
+                  >
+                    <option value="">Seleccione...</option>
+                    {maquinasSurtir.map((m) => (
+                      <option key={m.id} value={m.id}>{m.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                    Seleccionar Lote *
+                  </label>
+                  <select
+                    name="loteId"
+                    required
+                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-emerald-600"
+                  >
+                    <option value="">Seleccione...</option>
+                    {lotesSurtir.map((l: any) => (
+                      <option key={l.loteId} value={l.loteId}>
+                        Lote: {l.lote?.codigo || l.loteId} (Disp: {l.cantidad})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 dark:text-stone-300 block mb-1">
+                    Cantidad ({insumoASurtir.unidadMedida}) *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    name="cantidad"
+                    required
+                    min="0.01"
+                    placeholder="Ej. 1.5"
+                    className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3 py-2 outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div className="pt-3 flex justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
+                  <button
+                    type="button"
+                    onClick={() => setInsumoASurtir(null)}
+                    className="px-4 py-2 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl font-medium"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Surtir</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

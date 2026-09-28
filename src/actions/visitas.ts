@@ -4,6 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { TipoVisitaExtra, EstadoVisitaExtra, TipoMovimientoInventario } from "@prisma/client";
+import { z } from "zod";
+
+const reposicionItemSchema = z.object({
+  insumoId: z.string().min(1),
+  cantidad: z.union([z.number(), z.string()]).transform(val => Number(val)),
+  nombre: z.string().optional(),
+  unidadMedida: z.string().optional(),
+});
+const reposicionSchema = z.array(reposicionItemSchema);
 
 export interface VisitaExtraordinariaItem {
   id: string;
@@ -51,8 +60,9 @@ export async function obtenerVisitasExtraordinarias(filtros?: {
   maquinaId?: string;
 }): Promise<{ success: boolean; data: VisitaExtraordinariaItem[]; error?: string }> {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
+    const currentUser = await getCurrentUser();
+    const user = currentUser;
+    if (!currentUser) {
       return { success: false, data: [], error: "No autenticado" };
     }
 
@@ -63,8 +73,8 @@ export async function obtenerVisitasExtraordinarias(filtros?: {
     }
 
     // Si el usuario es rutero, solo ve las visitas asignadas a él
-    if (user.rol === "OPERADOR_RUTA") {
-      whereClause.operadorId = user.id;
+    if (currentUser.rol === "OPERADOR_RUTA") {
+      whereClause.operadorId = currentUser.id;
     } else if (filtros?.operadorId && filtros.operadorId !== "TODOS") {
       whereClause.operadorId = filtros.operadorId;
     }
@@ -123,6 +133,7 @@ export async function obtenerVisitasExtraordinarias(filtros?: {
 
 export async function crearVisitaExtraordinaria(formData: FormData) {
   const currentUser = await getCurrentUser();
+    const user = currentUser;
   if (!currentUser) {
     return { success: false, error: "No autenticado" };
   }
@@ -139,6 +150,10 @@ export async function crearVisitaExtraordinaria(formData: FormData) {
       return { success: false, error: "La máquina y el tipo de visita son requeridos" };
     }
 
+    if (currentUser.rol !== 'ADMIN' && currentUser.id !== operadorId) {
+      return { success: false, error: 'No tienes permiso para crear esta visita.' };
+    }
+
     const maquina = await prisma.maquina.findUnique({
       where: { id: maquinaId },
       select: { clienteId: true },
@@ -150,8 +165,9 @@ export async function crearVisitaExtraordinaria(formData: FormData) {
 
     const visita = await prisma.visitaExtraordinaria.create({
       data: {
+          empresaId: currentUser.empresaId,
         tipo,
-        prioridad,
+        prioridad: prioridad as any,
         maquinaId,
         clienteId: maquina.clienteId,
         operadorId,
@@ -174,8 +190,9 @@ export async function crearVisitaExtraordinaria(formData: FormData) {
 
 export async function completarVisitaExtraordinaria(formData: FormData) {
   const currentUser = await getCurrentUser();
+    const user = currentUser;
   if (!currentUser) {
-    return { success: false, error: "No autenticado" };
+    return { success: false, error: 'No autorizado.' };
   }
 
   try {
@@ -194,56 +211,73 @@ export async function completarVisitaExtraordinaria(formData: FormData) {
     });
 
     if (!visita) {
-      return { success: false, error: "Visita no encontrada" };
+      return { success: false, error: 'Visita no encontrada.' };
     }
 
-    let detallesReposicionParsed = null;
+    if (currentUser.rol !== 'ADMIN' && currentUser.id !== visita.operadorId) {
+      return { success: false, error: 'No tienes permiso para completar esta visita.' };
+    }
 
-    // Si fue una reposición de insumos, procesamos y descargamos del inventario
-    if (visita.tipo === TipoVisitaExtra.REPOSICION_URGENTE && detallesReposicionRaw) {
-      try {
-        detallesReposicionParsed = JSON.parse(detallesReposicionRaw);
-        if (Array.isArray(detallesReposicionParsed)) {
-          for (const item of detallesReposicionParsed) {
-            const cantidadNum = parseFloat(item.cantidad);
-            if (item.insumoId && !isNaN(cantidadNum) && cantidadNum > 0) {
-              // 1. Crear movimiento de salida por reposición
-              await prisma.movimientoInventario.create({
-                data: {
-                  insumoId: item.insumoId,
-                  tipo: TipoMovimientoInventario.SALIDA_FISICA_REPOSICION,
-                  cantidad: cantidadNum,
-                  referencia: `Visita Extraordinaria #${visita.consecutivo} (${visita.maquina.codigoSerial})`,
-                  operadorId: currentUser.id,
-                },
-              });
+    let detallesReposicionParsed: any = null;
 
-              // 2. Decrementar stock actual de bodega
-              await prisma.insumo.update({
-                where: { id: item.insumoId },
-                data: {
-                  stockActual: {
-                    decrement: cantidadNum,
+    await prisma.$transaction(async (tx) => {
+      // Si fue una reposición de insumos, procesamos y descargamos del inventario
+      if (visita.tipo === TipoVisitaExtra.REPOSICION_URGENTE && detallesReposicionRaw) {
+        try {
+          const parsedRaw = JSON.parse(detallesReposicionRaw);
+          const validationResult = reposicionSchema.safeParse(parsedRaw);
+          
+          if (validationResult.success) {
+            detallesReposicionParsed = validationResult.data;
+            for (const item of detallesReposicionParsed) {
+              const cantidadNum = item.cantidad;
+              if (item.insumoId && cantidadNum > 0) {
+                const insumo = await tx.insumo.findUnique({ where: { id: item.insumoId } });
+                if (!insumo) continue; // Skip if insumo doesn't exist
+
+                // 1. Crear movimiento de salida por reposición
+                await tx.movimientoInventario.create({
+                  data: {
+                      empresaId: currentUser.empresaId,
+                    insumoId: item.insumoId,
+                    tipo: TipoMovimientoInventario.SALIDA_FISICA_REPOSICION,
+                    cantidad: cantidadNum,
+                    referencia: `Visita Extraordinaria #${visita.consecutivo} (${visita.maquina.codigoSerial})`,
+                    operadorId: currentUser.id,
                   },
-                },
-              });
+                });
+
+                // 2. Decrementar stock actual de bodega
+                await tx.insumo.update({
+                  where: {
+                      empresaId: currentUser.empresaId,
+                    id: item.insumoId },
+                  data: {
+                    stockActual: {
+                      decrement: cantidadNum,
+                    },
+                  },
+                });
+              }
             }
           }
+        } catch (e) {
+          console.error("Error al procesar detalles de reposición:", e);
         }
-      } catch (e) {
-        console.error("Error al procesar detalles de reposición:", e);
       }
-    }
 
-    await prisma.visitaExtraordinaria.update({
-      where: { id },
-      data: {
-        estado: EstadoVisitaExtra.COMPLETADA,
-        solucionAplicada,
-        fotoEvidenciaUrl,
-        detallesReposicion: detallesReposicionParsed || undefined,
-        fechaCompletada: new Date(),
-      },
+      await tx.visitaExtraordinaria.update({
+        where: {
+            empresaId: currentUser.empresaId,
+            id },
+        data: {
+          estado: EstadoVisitaExtra.COMPLETADA,
+          solucionAplicada,
+          fotoEvidenciaUrl,
+          detallesReposicion: detallesReposicionParsed || undefined,
+          fechaCompletada: new Date(),
+        },
+      });
     });
 
     revalidatePath("/admin/rutas");
@@ -257,11 +291,14 @@ export async function completarVisitaExtraordinaria(formData: FormData) {
 }
 
 export async function cancelarVisitaExtraordinaria(id: string) {
-  await requireAdmin();
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { success: false, error: "No autorizado" };
 
   try {
     await prisma.visitaExtraordinaria.update({
-      where: { id },
+      where: {
+          empresaId: currentUser.empresaId,
+        id },
       data: {
         estado: EstadoVisitaExtra.CANCELADA,
       },

@@ -27,7 +27,7 @@ export interface UsuarioItem {
   id: string;
   name: string;
   email: string;
-  rol: "ADMIN" | "OPERADOR_RUTA" | "CLIENTE";
+  rol: "SUPERADMIN" | "ADMIN" | "OPERADOR_RUTA" | "CLIENTE";
   rutas: string[];
   totalLiquidaciones: number;
   createdAt: string;

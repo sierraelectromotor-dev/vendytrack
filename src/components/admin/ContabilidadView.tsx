@@ -29,6 +29,7 @@ import {
 } from "@/actions/contabilidad";
 import { RegistrarTransaccionModal } from "./RegistrarTransaccionModal";
 import { GastosFijosModal } from "./GastosFijosModal";
+import { CuentasBancariasModal } from "./CuentasBancariasModal";
 import { PuntoEquilibrioCard } from "./PuntoEquilibrioCard";
 
 interface ContabilidadViewProps {
@@ -66,6 +67,7 @@ export default function ContabilidadView({
   const [modalAbierto, setModalAbierto] = useState(false);
   const [tipoModal, setTipoModal] = useState<"GASTO" | "INGRESO">("GASTO");
   const [modalGastosFijosAbierto, setModalGastosFijosAbierto] = useState(false);
+  const [modalCuentasBancariasAbierto, setModalCuentasBancariasAbierto] = useState(false);
 
   const [isPending, startTransition] = useTransition();
 
@@ -160,6 +162,18 @@ export default function ContabilidadView({
             </select>
           </div>
 
+          {/* Botón Cuentas Bancarias */}
+          <button
+            type="button"
+            onClick={() => setModalCuentasBancariasAbierto(true)}
+            className="px-2.5 sm:px-3 py-1.5 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1 sm:gap-1.5 shrink-0 whitespace-nowrap text-[11px] sm:text-xs"
+            title="Administrar cuentas bancarias y saldos"
+          >
+            <Banknote className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="hidden sm:inline">Cuentas Bancarias</span>
+            <span className="sm:hidden">Cuentas</span>
+          </button>
+
           {/* Botón Gastos Fijos */}
           <button
             type="button"
@@ -168,7 +182,8 @@ export default function ContabilidadView({
             title="Administrar arriendos, nómina base y costos fijos"
           >
             <Settings className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span>Gastos Fijos</span>
+            <span className="hidden sm:inline">Gastos Fijos</span>
+            <span className="sm:hidden">G. Fijos</span>
           </button>
 
           {/* Botón Registrar Gasto */}
@@ -208,7 +223,7 @@ export default function ContabilidadView({
       )}
 
       {/* KPI Cards de Finanzas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total Ingresos */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
@@ -287,16 +302,36 @@ export default function ContabilidadView({
             <span className="text-stone-500 font-bold uppercase tracking-wider text-[10px]">
               Margen Operativo
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <Percent className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-xl font-black text-purple-600 dark:text-purple-400">
+            <span className="text-xl font-black text-blue-600 dark:text-blue-400">
               {data.margenOperativo.toFixed(1)}%
             </span>
             <p className="text-[10px] text-stone-400 mt-0.5">
-              Rentabilidad sobre ventas
+              Utilidad / Ingresos (Salud financiera)
+            </p>
+          </div>
+        </div>
+
+        {/* Cartera Pendiente */}
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-stone-500 font-bold uppercase tracking-wider text-[10px]">
+              Cartera (CxC)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Banknote className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <span className="text-xl font-black text-purple-600 dark:text-purple-400">
+              {formatearDinero(data.carteraPendiente || 0)}
+            </span>
+            <p className="text-[10px] text-stone-400 mt-0.5">
+              Por cobrar a clientes (Total)
             </p>
           </div>
         </div>
@@ -588,6 +623,13 @@ export default function ContabilidadView({
               }
             });
           }}
+        />
+      )}
+
+      {/* Modal de Cuentas Bancarias */}
+      {modalCuentasBancariasAbierto && (
+        <CuentasBancariasModal
+          onClose={() => setModalCuentasBancariasAbierto(false)}
         />
       )}
     </div>

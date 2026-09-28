@@ -1,12 +1,18 @@
 import { put } from "@vercel/blob";
 
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
+
+function checkSize(size: number) {
+  if (size > MAX_FILE_SIZE) {
+    throw new Error("El archivo excede el límite de 4MB.");
+  }
+}
+
 /**
  * Sube la foto de los contadores de la máquina a Vercel Blob.
- * Si Vercel Blob no está configurado o falla, devuelve el fallback Base64 para no romper la imagen.
  * @param file Archivo imagen (File o Buffer)
  * @param filename Nombre identificador del archivo
- * @param fallbackBase64 Cadena base64 opcional en caso de que Blob no esté disponible
- * @returns URL pública del archivo subido en Vercel Blob o cadena Base64
+ * @returns URL pública del archivo subido en Vercel Blob
  */
 export async function uploadCounterPhoto(
   file: File | Blob | Buffer,
@@ -15,11 +21,12 @@ export async function uploadCounterPhoto(
 ): Promise<string> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-  // Si no hay token de Vercel Blob configurado, usamos el fallback base64
-  if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Usando imagen Base64 local.");
-    return fallbackBase64 || "";
+  if (!token) {
+    throw new Error("BLOB_READ_WRITE_TOKEN no configurado.");
   }
+
+  const size = Buffer.isBuffer(file) ? file.length : file.size;
+  checkSize(size);
 
   try {
     const blob = await put(`evidencias/contadores/${Date.now()}-${filename}`, file, {
@@ -28,18 +35,16 @@ export async function uploadCounterPhoto(
     });
     return blob.url;
   } catch (error) {
-    console.warn("[Vercel Blob] Error subiendo foto a Blob, usando fallback:", error);
-    return fallbackBase64 || "";
+    console.error("[Vercel Blob] Error subiendo foto a Blob:", error);
+    return 'upload-failed';
   }
 }
 
 /**
  * Sube la firma del cliente capturada en Canvas a Vercel Blob.
- * Si Vercel Blob no está configurado o falla, devuelve directamente el Data URL (Base64),
- * garantizando que la firma siempre se visualice en el Dashboard y en el PDF.
  * @param base64Signature Cadena 'data:image/png;base64,...'
  * @param filename Nombre del archivo
- * @returns URL pública de Vercel Blob o la misma cadena Data URL Base64
+ * @returns URL pública de Vercel Blob
  */
 export async function uploadSignature(
   base64Signature: string,
@@ -47,15 +52,15 @@ export async function uploadSignature(
 ): Promise<string> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-  if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado. Almacenando firma como Data URL Base64.");
-    return base64Signature;
+  if (!token) {
+    throw new Error("BLOB_READ_WRITE_TOKEN no configurado.");
   }
 
   try {
     // Extraer el contenido binario del data URL
     const base64Data = base64Signature.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
+    checkSize(buffer.length);
 
     const blob = await put(`firmas/${Date.now()}-${filename}.png`, buffer, {
       access: "public",
@@ -65,8 +70,8 @@ export async function uploadSignature(
 
     return blob.url;
   } catch (error) {
-    console.warn("[Vercel Blob] Error al subir firma a Blob, usando Data URL Base64:", error);
-    return base64Signature;
+    console.error("[Vercel Blob] Error al subir firma a Blob:", error);
+    return 'upload-failed';
   }
 }
 
@@ -82,21 +87,22 @@ export async function uploadPdfReceipt(
 ): Promise<string | null> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 
-  if (!token || token.includes("demo_token")) {
-    console.warn("[Vercel Blob] BLOB_READ_WRITE_TOKEN no configurado.");
-    return null;
+  if (!token) {
+    throw new Error("BLOB_READ_WRITE_TOKEN no configurado.");
   }
+
+  checkSize(pdfBuffer.length);
 
   try {
     const blob = await put(`recibos/recibo-${consecutivo}.pdf`, pdfBuffer, {
       access: "public",
       contentType: "application/pdf",
-      addRandomSuffix: false,
+      addRandomSuffix: true,
     });
 
     return blob.url;
   } catch (error) {
     console.error("[Vercel Blob] Error subiendo PDF:", error);
-    return null;
+    return 'upload-failed';
   }
 }

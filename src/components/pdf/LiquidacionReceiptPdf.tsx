@@ -36,7 +36,7 @@ export interface LiquidacionPdfData {
     ubicacion: string;
   };
   operadorNombre: string;
-  metodoPago: "EFECTIVO" | "TRANSFERENCIA";
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | string;
   detalles: DetallePdfItem[];
   totales: {
     totalTazasNetas: number;

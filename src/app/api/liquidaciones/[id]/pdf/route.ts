@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUser } from '@/lib/auth';
 import prisma from "@/lib/prisma";
 import React from "react";
 import { renderToBuffer } from "@react-pdf/renderer";
@@ -16,6 +17,12 @@ export async function GET(
   try {
     const liquidacionId = params.id;
 
+    // Verificar autenticación
+    const user = await getCurrentUser();
+    if (!user) {
+      return new Response('No autorizado', { status: 401 });
+    }
+
     // Buscar la liquidación en Prisma
     const liq = await prisma.liquidacion.findUnique({
       where: { id: liquidacionId },
@@ -32,6 +39,15 @@ export async function GET(
         { error: "Liquidación no encontrada" },
         { status: 404 }
       );
+    }
+
+    // Verificar autorización: ADMIN, operador que liquidó, o cliente propietario
+    if (
+      user.rol !== 'ADMIN' &&
+      user.id !== liq.operadorId &&
+      user.clienteId !== liq.clienteId
+    ) {
+      return new Response('Acceso denegado', { status: 403 });
     }
 
     const nombreBebidasMap = Object.fromEntries(

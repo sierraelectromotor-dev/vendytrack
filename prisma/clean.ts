@@ -13,41 +13,49 @@ const prisma = new PrismaClient({
 async function main() {
   console.log("Iniciando limpieza total de datos de prueba...");
 
+  let empresa = await prisma.empresa.findFirst();
+  if (!empresa) {
+    empresa = await prisma.empresa.create({
+      data: { nombre: "Mi Empresa Default", nit: "000000000-0" }
+    });
+  }
+  const user = { empresaId: empresa.id };
+
   // 1. Borrar detalles y liquidaciones
-  const delDetalles = await prisma.detalleLiquidacion.deleteMany();
+  const delDetalles = await prisma.detalleLiquidacion.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Detalles de liquidación eliminados: ${delDetalles.count}`);
 
-  const delLiq = await prisma.liquidacion.deleteMany();
+  const delLiq = await prisma.liquidacion.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Liquidaciones eliminadas: ${delLiq.count}`);
 
   // 2. Borrar movimientos de inventario y recetas
-  const delMov = await prisma.movimientoInventario.deleteMany();
+  const delMov = await prisma.movimientoInventario.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Movimientos inventario eliminados: ${delMov.count}`);
 
-  const delRecetas = await prisma.recetaInsumo.deleteMany();
+  const delRecetas = await prisma.recetaInsumo.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Recetas eliminadas: ${delRecetas.count}`);
 
   // 3. Borrar insumos de bodega
-  const delInsumos = await prisma.insumo.deleteMany();
+  const delInsumos = await prisma.insumo.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Insumos eliminados: ${delInsumos.count}`);
 
   // 4. Borrar configuraciones y precios de máquinas
-  const delConfig = await prisma.configBebidaMaquina.deleteMany();
+  const delConfig = await prisma.configBebidaMaquina.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Configuraciones de bebidas eliminadas: ${delConfig.count}`);
 
-  const delPrecios = await prisma.precioMaquina.deleteMany();
+  const delPrecios = await prisma.precioMaquina.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Precios de máquinas eliminados: ${delPrecios.count}`);
 
   // 5. Borrar máquinas
-  const delMaq = await prisma.maquina.deleteMany();
+  const delMaq = await prisma.maquina.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Máquinas eliminadas: ${delMaq.count}`);
 
   // 6. Borrar rutas
-  const delRutas = await prisma.ruta.deleteMany();
+  const delRutas = await prisma.ruta.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Rutas eliminadas: ${delRutas.count}`);
 
   // 7. Borrar clientes
-  const delClientes = await prisma.cliente.deleteMany();
+  const delClientes = await prisma.cliente.deleteMany({ where: { empresaId: user.empresaId } });
   console.log(`Clientes eliminados: ${delClientes.count}`);
 
   // 8. Borrar todos los usuarios excepto el admin principal
@@ -58,19 +66,20 @@ async function main() {
   });
   console.log(`Usuarios de prueba eliminados: ${delUsers.count}`);
 
-  // 9. Asegurar que existe el único Administrador
+  // 9. Asegurar que existe el único Administrador y su empresa
   const admin = await prisma.user.upsert({
     where: { email: "admin@vendytrack.com" },
     update: {
       name: "Administrador General",
       passwordHash: "admin123",
-      rol: Rol.ADMIN,
+      rol: Rol.SUPERADMIN,
     },
     create: {
       name: "Administrador General",
       email: "admin@vendytrack.com",
       passwordHash: "admin123",
-      rol: Rol.ADMIN,
+      rol: Rol.SUPERADMIN,
+      empresaId: empresa.id,
     },
   });
   console.log(`Administrador único configurado: ${admin.email} (${admin.name})`);

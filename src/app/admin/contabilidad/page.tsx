@@ -14,6 +14,7 @@ export default async function ContabilidadPage() {
     totalGastos: 0,
     utilidadNeta: 0,
     margenOperativo: 0,
+    carteraPendiente: 0,
     transacciones: [],
     desgloseGastos: [],
     metodosPago: {

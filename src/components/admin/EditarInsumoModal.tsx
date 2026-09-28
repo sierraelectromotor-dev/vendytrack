@@ -194,6 +194,24 @@ export const EditarInsumoModal: React.FC<EditarInsumoModalProps> = ({
               />
             </div>
           </div>
+          
+          <div>
+            <label className="font-semibold text-stone-700 dark:text-stone-300 block mb-1">
+              Precio de Venta ($ COP) - Opcional
+            </label>
+            <div className="relative">
+              <DollarSign className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="number"
+                step="any"
+                name="precioVenta"
+                defaultValue={(insumo as any).precioVenta || ""}
+                placeholder="ej. 10000"
+                className="w-full pl-8 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 outline-none focus:border-coffee-600 dark:text-white font-mono"
+              />
+            </div>
+            <p className="text-xs text-stone-500 mt-1">Si este insumo se vende directo al cliente (Venta por Bolsa), define el precio base por unidad.</p>
+          </div>
 
           {/* Botones de Acción */}
           <div className="pt-2 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-stone-800">

@@ -5,12 +5,21 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Iniciando Seed para VendyTrack...");
 
+  let empresa = await prisma.empresa.findFirst();
+  if (!empresa) {
+    empresa = await prisma.empresa.create({
+      data: { nombre: "Mi Empresa Default", nit: "000000000-0" }
+    });
+  }
+  const user = { empresaId: empresa.id };
+
   // 1. Crear Insumos del Catálogo
   const insumoCafe = await prisma.insumo.upsert({
     where: { codigo: "INS-CAFE-SOLUBLE" },
     update: {},
     create: {
-      codigo: "INS-CAFE-SOLUBLE",
+        empresaId: user.empresaId,
+        codigo: "INS-CAFE-SOLUBLE",
       nombre: "Café Soluble Liofilizado (kg)",
       unidadMedida: UnidadMedida.KG,
       stockActual: 50.0,
@@ -23,7 +32,8 @@ async function main() {
     where: { codigo: "INS-LECHE-POLVO" },
     update: {},
     create: {
-      codigo: "INS-LECHE-POLVO",
+        empresaId: user.empresaId,
+        codigo: "INS-LECHE-POLVO",
       nombre: "Leche en Polvo Vending (kg)",
       unidadMedida: UnidadMedida.KG,
       stockActual: 80.0,
@@ -36,7 +46,8 @@ async function main() {
     where: { codigo: "INS-COCOA" },
     update: {},
     create: {
-      codigo: "INS-COCOA",
+        empresaId: user.empresaId,
+        codigo: "INS-COCOA",
       nombre: "Cocoa Chocolatada Vending (kg)",
       unidadMedida: UnidadMedida.KG,
       stockActual: 40.0,
@@ -49,7 +60,8 @@ async function main() {
     where: { codigo: "INS-VASOS-7OZ" },
     update: {},
     create: {
-      codigo: "INS-VASOS-7OZ",
+        empresaId: user.empresaId,
+        codigo: "INS-VASOS-7OZ",
       nombre: "Vasos Térmicos 7oz (unidades)",
       unidadMedida: UnidadMedida.UNIDADES,
       stockActual: 5000,
@@ -62,7 +74,8 @@ async function main() {
     where: { codigo: "INS-MEZCLADORES" },
     update: {},
     create: {
-      codigo: "INS-MEZCLADORES",
+        empresaId: user.empresaId,
+        codigo: "INS-MEZCLADORES",
       nombre: "Mezcladores de Café (unidades)",
       unidadMedida: UnidadMedida.UNIDADES,
       stockActual: 5000,
@@ -125,6 +138,7 @@ async function main() {
       },
       update: { cantidadPorTaza: r.cantidad },
       create: {
+          empresaId: user.empresaId,
         bebida: r.bebida,
         insumoId: r.insumoId,
         cantidadPorTaza: r.cantidad,
@@ -137,7 +151,8 @@ async function main() {
     where: { id: "cli-demo-01" },
     update: {},
     create: {
-      id: "cli-demo-01",
+        empresaId: user.empresaId,
+        id: "cli-demo-01",
       razonSocial: "Hospital Universitario San José",
       sede: "Sede Centro",
       direccion: "Calle 10 # 5-22",
@@ -151,7 +166,8 @@ async function main() {
     where: { codigoSerial: "MAQ-COL-2024-089" },
     update: {},
     create: {
-      id: "maq-demo-01",
+        empresaId: user.empresaId,
+        id: "maq-demo-01",
       codigoSerial: "MAQ-COL-2024-089",
       ubicacion: "Cafetería Principal Piso 2",
       modelo: "Bianchi Soluble 4 Tolvas",
@@ -187,6 +203,7 @@ async function main() {
         precio: c.precio,
       },
       create: {
+          empresaId: user.empresaId,
         maquinaId: maquina.id,
         bebida: c.bebida,
         activa: c.activa,
@@ -219,6 +236,7 @@ async function main() {
       },
       update: { precioUnitario: p.precio },
       create: {
+          empresaId: user.empresaId,
         maquinaId: maquina.id,
         bebida: p.bebida,
         precioUnitario: p.precio,
@@ -236,6 +254,7 @@ async function main() {
       email: "carlos.operador@vendytrack.com",
       passwordHash: "hash_demo_12345",
       rol: Rol.OPERADOR_RUTA,
+      empresaId: empresa.id,
     },
   });
 

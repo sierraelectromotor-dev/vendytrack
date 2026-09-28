@@ -14,26 +14,20 @@ function createPrismaClient() {
     process.env.POSTGRES_URL ||
     "";
 
-  if (!process.env.DATABASE_URL && connectionString) {
-    process.env.DATABASE_URL = connectionString;
-  }
-
-  // En entornos de desarrollo o sin DATABASE_URL configurada aún,
-  // permitimos inicializar de forma segura sin romper la compilación
   if (!connectionString) {
     return new PrismaClient();
   }
 
   const pool = globalForPrisma.pgPool ?? new Pool({
     connectionString,
-    max: 10, // Control de pool para Vercel Serverless
+    max: 2,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.pgPool = pool;
-  }
+  pool.on('error', (err) => { console.error('[PrismaPool] Error inesperado:', err); });
+
+  globalForPrisma.pgPool = pool;
 
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
@@ -41,8 +35,5 @@ function createPrismaClient() {
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
-
+globalForPrisma.prisma = prisma;
 export default prisma;

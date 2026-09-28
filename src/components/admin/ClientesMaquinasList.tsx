@@ -67,6 +67,16 @@ export interface MaquinaItem {
   ultimoConsecutivo?: number | null;
   ultimaLiquidacionId?: string | null;
   configuraciones: BebidaConfigItem[];
+  bodega?: {
+    id: string;
+    existencias: Array<{
+      id: string;
+      insumoId: string;
+      insumoNombre: string;
+      cantidad: number;
+      unidadMedida: string;
+    }>;
+  } | null;
 }
 
 export interface ClienteItem {
@@ -452,6 +462,27 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                     })}
                 </div>
 
+                {/* Inventario de la Máquina */}
+                {m.bodega && (
+                  <div className="flex flex-wrap gap-1.5 pt-2 mt-2 border-t border-stone-100 dark:border-stone-800">
+                    <span className="text-[10px] text-stone-500 font-bold flex items-center gap-1 w-full pb-0.5">
+                      <Package className="w-3 h-3" /> Inventario Bodega:
+                    </span>
+                    {m.bodega.existencias.length > 0 ? (
+                      m.bodega.existencias.map(e => (
+                        <span key={e.id} className="text-[10px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/50 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                          <span className="font-semibold">{e.insumoNombre}</span>
+                          <span className="font-mono font-bold bg-emerald-100 dark:bg-emerald-900/50 px-1 rounded">
+                            {e.cantidad} {e.unidadMedida}
+                          </span>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] text-stone-400 italic px-1">Sin inventario físico</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Botón Asignar a Cliente */}
                 <button
                   type="button"
@@ -755,6 +786,27 @@ export const ClientesMaquinasList: React.FC<ClientesMaquinasListProps> = ({
                               </span>
                             )}
                           </div>
+
+                          {/* Inventario de la Máquina */}
+                          {m.bodega && (
+                            <div className="flex flex-wrap gap-1.5 pt-2 mt-2 border-t border-stone-200/50 dark:border-stone-700/50">
+                              <span className="text-[10px] text-stone-500 font-bold flex items-center gap-1 w-full pb-0.5">
+                                <Package className="w-3 h-3" /> Inventario Actual
+                              </span>
+                              {m.bodega.existencias.length > 0 ? (
+                                m.bodega.existencias.map(e => (
+                                  <span key={e.id} className="text-[10px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/50 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                    <span className="font-semibold">{e.insumoNombre}</span>
+                                    <span className="font-mono font-bold bg-emerald-100 dark:bg-emerald-900/50 px-1 rounded">
+                                      {e.cantidad} {e.unidadMedida}
+                                    </span>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-stone-400 italic px-1">Sin inventario físico</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

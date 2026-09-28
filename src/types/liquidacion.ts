@@ -46,9 +46,8 @@ export const detalleBebidaSchema = z.object({
 export const liquidacionFormSchema = z.object({
   clienteId: z.string().min(1, "Debe seleccionar un cliente"),
   maquinaId: z.string().min(1, "Debe seleccionar una máquina"),
-  metodoPago: z.enum(["EFECTIVO", "TRANSFERENCIA"], {
-    required_error: "Debe seleccionar el método de pago",
-  }),
+  montoEfectivo: z.coerce.number().min(0).default(0),
+  montoTransferencia: z.coerce.number().min(0).default(0),
   detalles: z.array(detalleBebidaSchema).min(1, "Debe registrar al menos una bebida"),
   fotoContadorBase64: z.string().optional().default(""),
   firmaClienteBase64: z.string().min(10, "La firma del encargado es obligatoria"),

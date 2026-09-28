@@ -20,7 +20,22 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [strokes, setStrokes] = useState<Array<Array<{ x: number; y: number }>>>([]);
-  const [currentStroke, setCurrentStroke] = useState<Array<{ x: number; y: number }>>([]);
+  const currentStrokeRef = useRef<{x: number; y: number}[]>([]);
+
+  useEffect(() => {
+    if (initialValue && !hasDrawn) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setHasDrawn(true);
+      };
+      img.src = initialValue;
+    }
+  }, [initialValue, hasDrawn]);
 
   // Configuración del canvas con soporte para alta resolución (Retina / Mobile)
   const setupCanvas = useCallback(() => {
@@ -107,7 +122,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     if (!coords) return;
 
     setIsDrawing(true);
-    setCurrentStroke([coords]);
+    currentStrokeRef.current = [coords];
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -132,7 +147,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     ctx.lineTo(coords.x, coords.y);
     ctx.stroke();
 
-    setCurrentStroke((prev) => [...prev, coords]);
+    currentStrokeRef.current.push(coords);
     setHasDrawn(true);
   };
 
@@ -141,10 +156,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     if (e) e.preventDefault();
 
     setIsDrawing(false);
-    if (currentStroke.length > 0) {
-      const updatedStrokes = [...strokes, currentStroke];
+    if (currentStrokeRef.current.length > 0) {
+      const updatedStrokes = [...strokes, currentStrokeRef.current];
       setStrokes(updatedStrokes);
-      setCurrentStroke([]);
+      currentStrokeRef.current = [];
 
       const canvas = canvasRef.current;
       if (canvas) {
@@ -163,7 +178,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
     const rect = canvas.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
     setStrokes([]);
-    setCurrentStroke([]);
+    currentStrokeRef.current = [];
     setHasDrawn(false);
     onSave("");
     if (onClear) onClear();
@@ -203,6 +218,8 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
       <div className="relative border-2 border-dashed border-stone-300 dark:border-stone-700 bg-white rounded-xl overflow-hidden shadow-inner touch-none">
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label="Área de firma digital del cliente. Use el dedo o lápiz para firmar."
           className="w-full h-44 cursor-crosshair block bg-stone-50/50"
           onMouseDown={startDrawing}
           onMouseMove={draw}

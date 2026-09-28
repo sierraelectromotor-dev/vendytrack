@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { formatCOP, formatFechaColombia } from "@/lib/utils";
+import { formatCOP, formatFechaColombia, formatFechaCorta } from "@/lib/utils";
 import { BEBIDAS_CATALOGO } from "@/types/liquidacion";
 import {
   DollarSign,
@@ -43,6 +43,7 @@ export interface DetalleItem {
 
 export interface LiquidacionItem {
   id: string;
+  tipo: string;
   consecutivo: number;
   fecha: string;
   clienteId: string;
@@ -54,25 +55,28 @@ export interface LiquidacionItem {
   ubicacion: string;
   operadorId: string;
   operadorNombre: string;
-  metodoPago: "EFECTIVO" | "TRANSFERENCIA";
+  metodoPago: string;
   totalFacturado: number;
-  fotoContadorUrl: string;
-  firmaClienteUrl: string;
-  reciboPdfUrl: string;
-  notas: string | null;
+  efectivoReales: number;
+  transferenciaReales: number;
+  fotoContadorUrl?: string;
+  firmaClienteUrl?: string;
+  reciboPdfUrl?: string | null;
+  notas?: string | null;
   totalTazas: number;
-  detalles: DetalleItem[];
+  detalles?: DetalleItem[];
 }
 
 interface DashboardRecaudosProps {
   initialData: {
     liquidaciones: LiquidacionItem[];
     clientes: { id: string; nombre: string }[];
+    carteraTotal: number;
   };
 }
 
 export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialData }) => {
-  const { liquidaciones, clientes } = initialData;
+  const { liquidaciones, clientes, carteraTotal } = initialData;
   const [liquidacionesState, setLiquidacionesState] = useState<LiquidacionItem[]>(liquidaciones);
   const [isReopenPending, setIsReopenPending] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
@@ -219,25 +223,28 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
     });
 
     const totalVentas = deEsteMes.reduce((acc, l) => acc + l.totalFacturado, 0);
-    const totalTazas = deEsteMes.reduce((acc, l) => acc + l.totalTazas, 0);
-    const efectivo = deEsteMes.filter((l) => l.metodoPago === "EFECTIVO").reduce((acc, l) => acc + l.totalFacturado, 0);
-    const transferencia = deEsteMes.filter((l) => l.metodoPago === "TRANSFERENCIA").reduce((acc, l) => acc + l.totalFacturado, 0);
+    const totalTazas = deEsteMes.reduce((acc, l) => acc + (l.totalTazas || 0), 0);
+    const efectivo = deEsteMes.reduce((acc, l) => acc + (l.efectivoReales || 0), 0);
+    const transferencia = deEsteMes.reduce((acc, l) => acc + (l.transferenciaReales || 0), 0);
+    const carteraGenerada = totalVentas - (efectivo + transferencia);
 
     return {
       totalVentas,
       totalTazas,
-      cantidadLiquidaciones: deEsteMes.length,
+      cantidadLiquidaciones: deEsteMes.filter(l => l.tipo === 'LIQUIDACION').length,
+      cantidadVentas: deEsteMes.filter(l => l.tipo === 'VENTA_DIRECTA').length,
       efectivo,
       transferencia,
+      carteraGenerada,
     };
   }, [liquidaciones]);
 
   // Cálculos para el conjunto filtrado en pantalla
   const metricasFiltradas = useMemo(() => {
     const totalVentas = liquidacionesFiltradas.reduce((acc, l) => acc + l.totalFacturado, 0);
-    const totalTazas = liquidacionesFiltradas.reduce((acc, l) => acc + l.totalTazas, 0);
-    const efectivo = liquidacionesFiltradas.filter((l) => l.metodoPago === "EFECTIVO").reduce((acc, l) => acc + l.totalFacturado, 0);
-    const transferencia = liquidacionesFiltradas.filter((l) => l.metodoPago === "TRANSFERENCIA").reduce((acc, l) => acc + l.totalFacturado, 0);
+    const totalTazas = liquidacionesFiltradas.reduce((acc, l) => acc + (l.totalTazas || 0), 0);
+    const efectivo = liquidacionesFiltradas.reduce((acc, l) => acc + (l.efectivoReales || 0), 0);
+    const transferencia = liquidacionesFiltradas.reduce((acc, l) => acc + (l.transferenciaReales || 0), 0);
     const ticketPromedio = liquidacionesFiltradas.length > 0 ? totalVentas / liquidacionesFiltradas.length : 0;
 
     return {
@@ -270,7 +277,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
 
     const filas = liquidacionesFiltradas.map((l) => [
       `LIQ-${l.consecutivo}`,
-      formatFechaColombia(l.fecha),
+      formatFechaCorta(l.fecha),
       `"${l.clienteNombre.replace(/"/g, '""')}"`,
       `"${l.sede.replace(/"/g, '""')}"`,
       `"${l.maquinaSerial}"`,
@@ -347,7 +354,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
       </div>
 
       {/* Tarjetas de Métricas Clave (KPIs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* KPI 1: Ventas del Mes en Curso */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
@@ -362,7 +369,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
             </span>
             <span className="text-[11px] text-stone-400 flex items-center gap-1">
               <Activity className="w-3 h-3 text-emerald-500" />
-              {metricasMesActual.cantidadLiquidaciones} liquidaciones este mes
+              {metricasMesActual.cantidadLiquidaciones} Liq / {metricasMesActual.cantidadVentas} Ventas
             </span>
           </div>
         </div>
@@ -389,7 +396,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
         {/* KPI 3: Recaudo Efectivo vs Transferencia (Mes Actual) */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-stone-500">Métodos de Pago (Mes)</span>
+            <span className="text-xs font-semibold text-stone-500">Recaudos Reales (Mes)</span>
             <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 flex items-center justify-center">
               <CreditCard className="w-4 h-4" />
             </div>
@@ -428,6 +435,24 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
             </span>
             <span className="text-[11px] text-stone-400">
               Total en vista: {formatCOP(metricasFiltradas.totalVentas)}
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 5: Cartera Pendiente (Global) */}
+        <div className="bg-white dark:bg-stone-900 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-5 shadow-sm space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Cartera Global Pendiente</span>
+            <div className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 flex items-center justify-center">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            <span className="text-2xl font-black text-rose-700 dark:text-rose-400 tracking-tight block">
+              {formatCOP(carteraTotal)}
+            </span>
+            <span className="text-[11px] text-rose-500/80">
+              Deuda de clientes activa
             </span>
           </div>
         </div>
@@ -616,7 +641,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                     <td className="py-3 px-4 whitespace-nowrap text-stone-600 dark:text-stone-400">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3 h-3 text-stone-400" />
-                        <span>{formatFechaColombia(l.fecha)}</span>
+                        <span>{formatFechaCorta(l.fecha)}</span>
                       </div>
                     </td>
 
@@ -686,7 +711,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
 
                         {/* Descargar PDF oficial */}
                         <a
-                          href={l.reciboPdfUrl}
+                          href={l.reciboPdfUrl || "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           title="Descargar Recibo PDF"
@@ -712,13 +737,13 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
             <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
               <div>
                 <span className="text-xs font-mono font-bold text-coffee-700 dark:text-amber-400">
-                  LIQUIDACIÓN #{selectedLiquidacion.consecutivo}
+                  LIQUIDACIN #{selectedLiquidacion.consecutivo}
                 </span>
                 <h3 className="text-base font-black text-stone-900 dark:text-white">
                   {selectedLiquidacion.clienteNombre}
                 </h3>
                 <span className="text-xs text-stone-400">
-                  {selectedLiquidacion.sede} • {formatFechaColombia(selectedLiquidacion.fecha)}
+                  {selectedLiquidacion.sede} &bull; {formatFechaCorta(selectedLiquidacion.fecha)}
                 </span>
               </div>
 
@@ -778,7 +803,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                    {selectedLiquidacion.detalles.map((d) => (
+                    {selectedLiquidacion.detalles?.map((d) => (
                       <tr key={d.id}>
                         <td className="py-2 px-3 font-semibold text-stone-800 dark:text-stone-200">
                           {nombreBebidasMap[d.bebida] || d.bebida}
@@ -871,7 +896,7 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
               </button>
 
               <a
-                href={selectedLiquidacion.reciboPdfUrl}
+                href={selectedLiquidacion.reciboPdfUrl || undefined}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="py-2.5 px-4 bg-coffee-800 hover:bg-coffee-900 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition-all"
@@ -886,3 +911,5 @@ export const DashboardRecaudos: React.FC<DashboardRecaudosProps> = ({ initialDat
     </div>
   );
 };
+
+

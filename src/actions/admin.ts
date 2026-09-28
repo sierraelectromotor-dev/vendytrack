@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import prisma from "@/lib/prisma";
@@ -19,19 +19,21 @@ function getDatabaseUrl() {
 }
 
 // ==========================================
-// 1. INVENTARIO DE BODEGA & KÁRDEX
+// 1. INVENTARIO DE BODEGA & KÃRDEX
 // ==========================================
 
 export async function obtenerInventarioBodega() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const insumos = await prisma.insumo.findMany({
-      orderBy: { nombre: "asc" },
+        where: { empresaId: currentUser.empresaId },
+        orderBy: { nombre: "asc" },
     });
 
     const movimientos = await prisma.movimientoInventario.findMany({
-      take: 20,
+        where: { empresaId: currentUser.empresaId },
+        take: 20,
       orderBy: { fecha: "desc" },
       include: {
         insumo: true,
@@ -49,6 +51,7 @@ export async function obtenerInventarioBodega() {
           stockActual: Number(i.stockActual),
           stockMinimo: Number(i.stockMinimo),
           costoPromedio: Number(i.costoPromedio),
+          precioVenta: i.precioVenta ? Number(i.precioVenta) : null,
         })),
         movimientos: movimientos.map((m) => ({
           id: m.id,
@@ -65,7 +68,8 @@ export async function obtenerInventarioBodega() {
   } catch (error) {
     console.error("[obtenerInventarioBodega] Error:", error);
     return {
-      success: true,
+      success: false,
+      error: 'Error al consultar datos.',
       data: {
         insumos: [],
         movimientos: [],
@@ -75,7 +79,7 @@ export async function obtenerInventarioBodega() {
 }
 
 export async function registrarEntradaBodega(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const insumoId = formData.get("insumoId")?.toString();
@@ -83,14 +87,80 @@ export async function registrarEntradaBodega(formData: FormData) {
     const costoUnitario = parseFloat(formData.get("costoUnitario")?.toString() || "0");
     const proveedor = formData.get("proveedor")?.toString() || "Proveedor General";
     const referencia = formData.get("referencia")?.toString() || `COMPRA-${Date.now()}`;
+    const numeroLote = formData.get("numeroLote")?.toString()?.trim();
+    const fechaVencimientoStr = formData.get("fechaVencimiento")?.toString();
+    const fechaVencimiento = fechaVencimientoStr ? new Date(fechaVencimientoStr) : null;
 
-    if (!insumoId || cantidad <= 0 || costoUnitario <= 0) {
-      return { success: false, error: "Datos de entrada inválidos" };
+    if (!insumoId || cantidad <= 0 || costoUnitario <= 0 || !numeroLote || !fechaVencimiento) {
+      return { success: false, error: "Datos de entrada invÃ¡lidos. Todos los campos (incluyendo lote y fecha) son obligatorios." };
     }
 
     await prisma.$transaction(async (tx) => {
       const insumo = await tx.insumo.findUnique({ where: { id: insumoId } });
       if (!insumo) throw new Error("Insumo no encontrado");
+
+      // 1. Obtener o crear Bodega Principal
+      let bodegaPrincipal = await tx.bodega.findFirst({
+        where: {
+            empresaId: currentUser.empresaId,
+            maquinaId: null },
+      });
+      if (!bodegaPrincipal) {
+        bodegaPrincipal = await tx.bodega.create({
+          data: {
+              empresaId: currentUser.empresaId,
+            nombre: "Bodega Principal",
+            tipo: "PRINCIPAL",
+          },
+        });
+      }
+
+      // 2. Obtener o crear Lote
+      const lote = await tx.lote.upsert({
+        where: {
+          numeroLote_insumoId: { insumoId, numeroLote },
+        },
+        update: {
+          ...(fechaVencimiento ? { fechaVencimiento } : {}),
+        },
+        create: {
+            empresaId: currentUser.empresaId,
+            insumoId,
+          numeroLote,
+          fechaVencimiento: fechaVencimiento!,
+        },
+      });
+
+      // 3. Actualizar o crear Existencia
+      const existencia = await tx.existencia.findFirst({
+        where: {
+            empresaId: currentUser.empresaId,
+            bodegaId: bodegaPrincipal.id,
+          insumoId: insumoId,
+          loteId: lote.id,
+        },
+      });
+
+      if (existencia) {
+        await tx.existencia.update({
+          where: {
+              empresaId: currentUser.empresaId,
+            id: existencia.id },
+          data: {
+            cantidad: Number(existencia.cantidad) + cantidad,
+          },
+        });
+      } else {
+        await tx.existencia.create({
+          data: {
+              empresaId: currentUser.empresaId,
+            bodegaId: bodegaPrincipal.id,
+            insumoId: insumoId,
+            loteId: lote.id,
+            cantidad: cantidad,
+          },
+        });
+      }
 
       const stockPrevio = Number(insumo.stockActual);
       const costoPrevio = Number(insumo.costoPromedio);
@@ -100,19 +170,24 @@ export async function registrarEntradaBodega(formData: FormData) {
           ? (stockPrevio * costoPrevio + cantidad * costoUnitario) / nuevoStock
           : costoUnitario;
 
-      // 1. Actualizar stock y costo promedio
+      // 4. Actualizar stock y costo promedio (cache global)
       await tx.insumo.update({
-        where: { id: insumoId },
+        where: {
+            empresaId: currentUser.empresaId,
+            id: insumoId },
         data: {
           stockActual: nuevoStock,
           costoPromedio: nuevoCostoPromedio,
         },
       });
 
-      // 2. Registrar movimiento de entrada en Kárdex
+      // 5. Registrar movimiento de entrada en KÃ¡rdex
       await tx.movimientoInventario.create({
         data: {
-          insumoId,
+            empresaId: currentUser.empresaId,
+            insumoId,
+          bodegaDestinoId: bodegaPrincipal.id,
+          loteId: lote.id,
           tipo: "ENTRADA_COMPRA",
           cantidad,
           costoUnitario,
@@ -130,7 +205,7 @@ export async function registrarEntradaBodega(formData: FormData) {
 }
 
 export async function crearInsumo(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const nombre = formData.get("nombre")?.toString().trim();
@@ -139,6 +214,7 @@ export async function crearInsumo(formData: FormData) {
     const stockInicial = parseFloat(formData.get("stockInicial")?.toString() || "0");
     const stockMinimo = parseFloat(formData.get("stockMinimo")?.toString() || "0");
     const costoPromedio = parseFloat(formData.get("costoPromedio")?.toString() || "0");
+    const precioVenta = parseFloat(formData.get("precioVenta")?.toString() || "0");
     const facturaCompra = formData.get("facturaCompra")?.toString().trim();
 
     if (!nombre) {
@@ -146,7 +222,7 @@ export async function crearInsumo(formData: FormData) {
     }
 
     if (!codigo) {
-      // Auto-generar código a partir del nombre si no se especifica
+      // Auto-generar cÃ³digo a partir del nombre si no se especifica
       codigo = `INS-${nombre.replace(/[^a-zA-Z0-9]/g, "-").toUpperCase().slice(0, 15)}`;
     }
 
@@ -155,24 +231,27 @@ export async function crearInsumo(formData: FormData) {
     });
 
     if (existe) {
-      return { success: false, error: `Ya existe un insumo con el código ${codigo}` };
+      return { success: false, error: `Ya existe un insumo con el cÃ³digo ${codigo}` };
     }
 
     await prisma.$transaction(async (tx) => {
       const insumo = await tx.insumo.create({
         data: {
+            empresaId: currentUser.empresaId,
+            nombre,
           codigo,
-          nombre,
           unidadMedida,
-          stockActual: stockInicial,
           stockMinimo,
+          stockActual: stockInicial,
           costoPromedio,
+          precioVenta: precioVenta > 0 ? precioVenta : null,
         },
       });
 
       if (stockInicial > 0) {
         await tx.movimientoInventario.create({
           data: {
+              empresaId: currentUser.empresaId,
             insumoId: insumo.id,
             tipo: "ENTRADA_COMPRA",
             cantidad: stockInicial,
@@ -194,7 +273,7 @@ export async function crearInsumo(formData: FormData) {
 }
 
 export async function editarInsumo(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const id = formData.get("id")?.toString();
@@ -204,25 +283,29 @@ export async function editarInsumo(formData: FormData) {
     const stockActual = parseFloat(formData.get("stockActual")?.toString() || "0");
     const stockMinimo = parseFloat(formData.get("stockMinimo")?.toString() || "0");
     const costoPromedio = parseFloat(formData.get("costoPromedio")?.toString() || "0");
+    const precioVenta = parseFloat(formData.get("precioVenta")?.toString() || "0");
 
     if (!id || !nombre || !codigo) {
-      return { success: false, error: "El ID, nombre y código del insumo son obligatorios" };
+      return { success: false, error: "El ID, nombre y cÃ³digo del insumo son obligatorios" };
     }
 
-    // Verificar si el código ya lo usa otro insumo distinto
+    // Verificar si el cÃ³digo ya lo usa otro insumo distinto
     const codigoExistente = await prisma.insumo.findFirst({
       where: {
+          empresaId: currentUser.empresaId,
         codigo,
         NOT: { id },
       },
     });
 
     if (codigoExistente) {
-      return { success: false, error: `Ya existe otro insumo con el código ${codigo}` };
+      return { success: false, error: `Ya existe otro insumo con el cÃ³digo ${codigo}` };
     }
 
     await prisma.insumo.update({
-      where: { id },
+      where: {
+          empresaId: currentUser.empresaId,
+        id },
       data: {
         nombre,
         codigo,
@@ -230,6 +313,7 @@ export async function editarInsumo(formData: FormData) {
         stockActual,
         stockMinimo,
         costoPromedio,
+        precioVenta: precioVenta > 0 ? precioVenta : null,
       },
     });
 
@@ -242,7 +326,7 @@ export async function editarInsumo(formData: FormData) {
 }
 
 export async function eliminarInsumo(insumoId: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (!insumoId) {
@@ -250,14 +334,18 @@ export async function eliminarInsumo(insumoId: string) {
     }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Eliminar movimientos asociados en Kárdex
+      // 1. Eliminar movimientos asociados en KÃ¡rdex
       await tx.movimientoInventario.deleteMany({
-        where: { insumoId },
+        where: {
+            empresaId: currentUser.empresaId,
+            insumoId },
       });
 
       // 2. Eliminar recetas asociadas
       await tx.recetaInsumo.deleteMany({
-        where: { insumoId },
+        where: {
+            empresaId: currentUser.empresaId,
+            insumoId },
       });
 
       // 3. Eliminar el insumo
@@ -275,13 +363,13 @@ export async function eliminarInsumo(insumoId: string) {
 }
 
 export async function cargarInsumosEstandar() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const standardInsumos = [
       {
         codigo: "INS-CAFE-SOLUBLE",
-        nombre: "Café Soluble Liofilizado",
+        nombre: "CafÃ© Soluble Liofilizado",
         unidadMedida: "KG" as UnidadMedida,
         stockMinimo: 5,
         costoPromedio: 42000,
@@ -330,14 +418,14 @@ export async function cargarInsumosEstandar() {
       },
       {
         codigo: "INS-VASOS-7OZ",
-        nombre: "Vasos Térmicos 7oz",
+        nombre: "Vasos TÃ©rmicos 7oz",
         unidadMedida: "UNIDADES" as UnidadMedida,
         stockMinimo: 500,
         costoPromedio: 120,
       },
       {
         codigo: "INS-MEZCLADORES",
-        nombre: "Mezcladores de Café",
+        nombre: "Mezcladores de CafÃ©",
         unidadMedida: "UNIDADES" as UnidadMedida,
         stockMinimo: 500,
         costoPromedio: 30,
@@ -353,6 +441,7 @@ export async function cargarInsumosEstandar() {
       if (!existe) {
         await prisma.insumo.create({
           data: {
+              empresaId: currentUser.empresaId,
             codigo: item.codigo,
             nombre: item.nombre,
             unidadMedida: item.unidadMedida,
@@ -369,16 +458,16 @@ export async function cargarInsumosEstandar() {
     return { success: true, creados };
   } catch (error: any) {
     console.error("[cargarInsumosEstandar] Error:", error);
-    return { success: false, error: error.message || "Error al cargar insumos estándar" };
+    return { success: false, error: error.message || "Error al cargar insumos estÃ¡ndar" };
   }
 }
 
 // ==========================================
-// 2. GESTIÓN DE RUTEROS Y ADMINISTRADORES
+// 2. GESTIÃ“N DE RUTEROS Y ADMINISTRADORES
 // ==========================================
 
 export async function obtenerUsuarios() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const usuarios = await prisma.user.findMany({
@@ -404,14 +493,15 @@ export async function obtenerUsuarios() {
   } catch (error) {
     console.error("[obtenerUsuarios] Error:", error);
     return {
-      success: true,
+      success: false,
+      error: 'Error al consultar datos.',
       data: [],
     };
   }
 }
 
 export async function obtenerRuteros() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const ruteros = await prisma.user.findMany({
@@ -435,14 +525,15 @@ export async function obtenerRuteros() {
   } catch (error) {
     console.error("[obtenerRuteros] Error:", error);
     return {
-      success: true,
+      success: false,
+      error: 'Error al consultar datos.',
       data: [],
     };
   }
 }
 
 export async function crearUsuario(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (!getDatabaseUrl()) {
@@ -463,9 +554,10 @@ export async function crearUsuario(formData: FormData) {
 
     await prisma.user.create({
       data: {
+        empresaId: currentUser.empresaId,
         name,
         email,
-        passwordHash: hashPassword(password.trim()),
+        passwordHash: await hashPassword(password.trim()),
         rol,
       },
     });
@@ -474,7 +566,7 @@ export async function crearUsuario(formData: FormData) {
     return { success: true };
   } catch (error: any) {
     console.error("[crearUsuario] Error:", error);
-    return { success: false, error: "El correo ya está en uso o ocurrió un error" };
+    return { success: false, error: "El correo ya estÃ¡ en uso o ocurriÃ³ un error" };
   }
 }
 
@@ -489,7 +581,7 @@ export async function actualizarUsuario(
   try {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
-      return { success: false, error: "No autorizado: Inicia sesión." };
+      return { success: false, error: "No autorizado: Inicia sesiÃ³n." };
     }
 
     // Solo un administrador o el propio usuario pueden editar este perfil
@@ -510,15 +602,19 @@ export async function actualizarUsuario(
     }
 
     const updateData: any = { name: name.trim() };
-    if (email && email.trim()) updateData.email = email.trim().toLowerCase();
-    if (password && password.trim()) updateData.passwordHash = hashPassword(password.trim());
+    if (currentUser.rol === "ADMIN" && email && email.trim()) {
+      updateData.email = email.trim().toLowerCase();
+    }
+    if (password && password.trim()) {
+      updateData.passwordHash = await hashPassword(password.trim());
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id },
       data: updateData,
     });
 
-    // Si el usuario actualizado es el usuario logueado actualmente, refrescar cookie de sesión
+    // Si el usuario actualizado es el usuario logueado actualmente, refrescar cookie de sesiÃ³n
     if (currentUser.id === id) {
       await setSessionCookie({
         id: updatedUser.id,
@@ -526,6 +622,7 @@ export async function actualizarUsuario(
         email: updatedUser.email,
         rol: updatedUser.rol as any,
         clienteId: updatedUser.clienteId,
+        empresaId: updatedUser.empresaId,
       });
     }
 
@@ -539,7 +636,7 @@ export async function actualizarUsuario(
 }
 
 export async function eliminarUsuario(id: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (!getDatabaseUrl()) {
@@ -561,29 +658,31 @@ export async function eliminarUsuario(id: string) {
       return { success: false, error: "Usuario no encontrado" };
     }
 
-    // Proteger si es el último administrador
+    // Proteger si es el Ãºltimo administrador
     if (user.rol === "ADMIN") {
       const totalAdmins = await prisma.user.count({ where: { rol: "ADMIN" } });
       if (totalAdmins <= 1) {
         return {
           success: false,
-          error: "No puedes eliminar el único administrador del sistema.",
+          error: "No puedes eliminar el Ãºnico administrador del sistema.",
         };
       }
     }
 
-    // Verificar si tiene liquidaciones históricas asociadas
+    // Verificar si tiene liquidaciones histÃ³ricas asociadas
     if (user.liquidaciones.length > 0) {
       return {
         success: false,
-        error: `No es posible eliminar al usuario porque tiene ${user.liquidaciones.length} liquidaciones asociadas en el historial. Puedes editar su nombre o contraseña si ya no labora en la empresa.`,
+        error: `No es posible eliminar al usuario porque tiene ${user.liquidaciones.length} liquidaciones asociadas en el historial. Puedes editar su nombre o contraseÃ±a si ya no labora en la empresa.`,
       };
     }
 
     // Si tiene rutas asignadas, desasignarlas primero
     if (user.rutasAsignadas.length > 0) {
       await prisma.ruta.updateMany({
-        where: { operadorId: id },
+        where: {
+            empresaId: currentUser.empresaId,
+            operadorId: id },
         data: { operadorId: null },
       });
     }
@@ -602,15 +701,16 @@ export async function eliminarUsuario(id: string) {
 }
 
 // ==========================================
-// 3. GESTIÓN DE CLIENTES Y MÁQUINAS
+// 3. GESTIÃ“N DE CLIENTES Y MÃQUINAS
 // ==========================================
 
 export async function obtenerClientes() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const [clientes, maquinasSinAsignar, insumos] = await Promise.all([
       prisma.cliente.findMany({
+          where: { empresaId: currentUser.empresaId },
         include: {
           maquinas: {
             where: {
@@ -624,32 +724,31 @@ export async function obtenerClientes() {
                 take: 1,
                 include: { detalles: true },
               },
+              bodega: {
+                include: {
+                  existencias: {
+                    include: {
+                      insumo: true,
+                    },
+                  },
+                },
+              },
             },
             orderBy: { codigoSerial: "asc" },
           },
         },
         orderBy: { razonSocial: "asc" },
       }),
-      prisma.maquina.findMany({
-        where: {
+      prisma.maquina.findMany({ where:  {
           OR: [
             { clienteId: null as any },
             { activa: false },
           ],
-        } as any,
-        include: {
-          cliente: true,
-          ruta: true,
-          configuraciones: true,
-          liquidaciones: {
-            orderBy: { fecha: "desc" },
-            take: 1,
-            include: { detalles: true },
-          },
-        },
+        } as any, include: { cliente: true, ruta: true, configuraciones: true, liquidaciones: { orderBy: { fecha: "desc" }, take: 1, include: { detalles: true } }, bodega: { include: { existencias: { include: { insumo: true } } } } },
         orderBy: { codigoSerial: "asc" },
       }),
       prisma.insumo.findMany({
+          where: { empresaId: currentUser.empresaId },
         orderBy: { nombre: "asc" },
       }),
     ]);
@@ -704,6 +803,16 @@ export async function obtenerClientes() {
             precio: Number(cfg.precio),
           };
         }),
+        bodega: m.bodega ? {
+          id: m.bodega.id,
+          existencias: m.bodega.existencias.map((e: any) => ({
+            id: e.id,
+            insumoId: e.insumoId,
+            insumoNombre: e.insumo.nombre,
+            cantidad: Number(e.cantidad),
+            unidadMedida: e.insumo.unidadMedida,
+          })),
+        } : null,
       };
     };
 
@@ -733,7 +842,8 @@ export async function obtenerClientes() {
   } catch (error) {
     console.error("[obtenerClientes] Error:", error);
     return {
-      success: true,
+      success: false,
+      error: 'Error al consultar datos.',
       data: [],
       maquinasSinAsignar: [],
       insumos: [],
@@ -742,7 +852,7 @@ export async function obtenerClientes() {
 }
 
 export async function crearCliente(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const razonSocial = formData.get("razonSocial")?.toString().trim();
@@ -761,6 +871,7 @@ export async function crearCliente(formData: FormData) {
 
     await prisma.cliente.create({
       data: {
+          empresaId: currentUser.empresaId,
         razonSocial,
         sede,
         direccion,
@@ -780,7 +891,7 @@ export async function crearCliente(formData: FormData) {
 }
 
 export async function actualizarCliente(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const id = formData.get("id")?.toString();
@@ -800,7 +911,9 @@ export async function actualizarCliente(formData: FormData) {
     }
 
     await prisma.cliente.update({
-      where: { id },
+      where: {
+          empresaId: currentUser.empresaId,
+        id },
       data: {
         razonSocial,
         sede,
@@ -822,7 +935,7 @@ export async function actualizarCliente(formData: FormData) {
 }
 
 export async function eliminarCliente(clienteId: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (!clienteId) {
@@ -830,9 +943,11 @@ export async function eliminarCliente(clienteId: string) {
     }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Desvincular máquinas asociadas y enviarlas a bodega
+      // 1. Desvincular mÃ¡quinas asociadas y enviarlas a bodega
       await tx.maquina.updateMany({
-        where: { clienteId },
+        where: {
+            empresaId: currentUser.empresaId,
+            clienteId },
         data: {
           clienteId: null,
           activa: false,
@@ -847,33 +962,12 @@ export async function eliminarCliente(clienteId: string) {
         data: { clienteId: null },
       });
 
-      // 3. Eliminar liquidaciones asociadas (y en cascada sus detalles y movimientos de inventario)
-      const liquidaciones = await tx.liquidacion.findMany({
-        where: { clienteId },
-        select: { id: true },
-      });
-
-      if (liquidaciones.length > 0) {
-        const liqIds = liquidaciones.map((l) => l.id);
-        await tx.movimientoInventario.deleteMany({
-          where: { liquidacionId: { in: liqIds } },
-        });
-        await tx.detalleLiquidacion.deleteMany({
-          where: { liquidacionId: { in: liqIds } },
-        });
-        await tx.liquidacion.deleteMany({
-          where: { clienteId },
-        });
-      }
-
-      // 4. Eliminar visitas extraordinarias asociadas
-      await tx.visitaExtraordinaria.deleteMany({
-        where: { clienteId },
-      });
-
-      // 5. Eliminar cliente permanentemente
-      await tx.cliente.delete({
-        where: { id: clienteId },
+      // 3. Borrado lÃ³gico en vez de fÃ­sico
+      await tx.cliente.update({
+        where: {
+            empresaId: currentUser.empresaId,
+            id: clienteId },
+        data: { activo: false },
       });
     });
 
@@ -887,7 +981,7 @@ export async function eliminarCliente(clienteId: string) {
 }
 
 export async function crearMaquina(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const codigoSerial = formData.get("codigoSerial")?.toString().trim();
@@ -905,7 +999,7 @@ export async function crearMaquina(formData: FormData) {
     const longitud = longitudRaw && !isNaN(parseFloat(longitudRaw)) ? parseFloat(longitudRaw) : null;
 
     if (!codigoSerial || !modelo) {
-      return { success: false, error: "Código serial y modelo son obligatorios" };
+      return { success: false, error: "CÃ³digo serial y modelo son obligatorios" };
     }
 
     const nuevaMaquina = await prisma.maquina.create({
@@ -920,6 +1014,12 @@ export async function crearMaquina(formData: FormData) {
         activa: clienteId !== null,
         latitud,
         longitud,
+        bodega: {
+          create: {
+            nombre: `Bodega Mq. ${codigoSerial}`,
+            tipo: 'MAQUINA'
+          }
+        }
       } as any,
     });
 
@@ -960,7 +1060,7 @@ export async function crearMaquina(formData: FormData) {
         });
       }
     } else {
-      // Calibración por defecto si no se envió bebidasJson
+      // CalibraciÃ³n por defecto si no se enviÃ³ bebidasJson
       const defaultCalibrations = [
         { bebida: "CAFE_LARGO_TINTO", cafe: 2.2, leche: 0, cocoa: 0, precio: 1800 },
         { bebida: "CAFE_CORTO_EXPRESO", cafe: 2.0, leche: 0, cocoa: 0, precio: 1800 },
@@ -1019,24 +1119,26 @@ export async function actualizarMaquina(data: {
     gramosCocoa?: number;
   }>;
 }) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const { id, codigoSerial, modelo, ubicacion, clienteId, rutaId, latitud, longitud, numeroProductos, bebidas } = data;
 
     if (!id || !codigoSerial || !modelo) {
-      return { success: false, error: "Datos incompletos de la máquina" };
+      return { success: false, error: "Datos incompletos de la mÃ¡quina" };
     }
 
     const finalClienteId = clienteId && clienteId !== "none" ? clienteId : null;
     const finalActiva = finalClienteId !== null;
 
     await prisma.maquina.update({
-      where: { id },
+      where: {
+          empresaId: currentUser.empresaId,
+        id },
       data: {
         codigoSerial,
         modelo,
-        ubicacion: ubicacion || (finalClienteId ? "Ubicación Principal" : "En Bodega / Taller"),
+        ubicacion: ubicacion || (finalClienteId ? "UbicaciÃ³n Principal" : "En Bodega / Taller"),
         clienteId: finalClienteId,
         activa: finalActiva,
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
@@ -1085,7 +1187,7 @@ export async function actualizarMaquina(data: {
     return { success: true };
   } catch (error: any) {
     console.error("[actualizarMaquina] Error:", error);
-    return { success: false, error: error.message || "Error al actualizar la máquina" };
+    return { success: false, error: error.message || "Error al actualizar la mÃ¡quina" };
   }
 }
 
@@ -1096,21 +1198,23 @@ export async function asignarMaquinaACliente(data: {
   rutaId?: string | null;
   contadores?: Record<string, number>;
 }) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const { maquinaId, clienteId, ubicacion, rutaId, contadores } = data;
 
     if (!maquinaId || !clienteId) {
-      return { success: false, error: "Máquina y cliente son obligatorios" };
+      return { success: false, error: "MÃ¡quina y cliente son obligatorios" };
     }
 
     await prisma.maquina.update({
-      where: { id: maquinaId },
+      where: {
+          empresaId: currentUser.empresaId,
+        id: maquinaId },
       data: {
         clienteId,
         activa: true,
-        ubicacion: ubicacion || "Ubicación Principal",
+        ubicacion: ubicacion || "UbicaciÃ³n Principal",
         rutaId: rutaId && rutaId !== "none" ? rutaId : null,
       } as any,
     });
@@ -1119,6 +1223,7 @@ export async function asignarMaquinaACliente(data: {
       for (const [bebida, contador] of Object.entries(contadores)) {
         await prisma.configBebidaMaquina.updateMany({
           where: {
+              empresaId: currentUser.empresaId,
             maquinaId,
             bebida: bebida as TipoBebida,
           },
@@ -1133,22 +1238,24 @@ export async function asignarMaquinaACliente(data: {
     return { success: true };
   } catch (error: any) {
     console.error("[asignarMaquinaACliente] Error:", error);
-    return { success: false, error: error.message || "Error al asignar la máquina al cliente" };
+    return { success: false, error: error.message || "Error al asignar la mÃ¡quina al cliente" };
   }
 }
 
 export async function eliminarMaquina(maquinaId: string, accion: "eliminar" | "desasignar") {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (!maquinaId) {
-      return { success: false, error: "ID de máquina no especificado" };
+      return { success: false, error: "ID de mÃ¡quina no especificado" };
     }
 
     if (accion === "desasignar") {
       // Enviar a bodega: desvincular cliente y ruta, marcar inactiva
       await prisma.maquina.update({
-        where: { id: maquinaId },
+        where: {
+            empresaId: currentUser.empresaId,
+            id: maquinaId },
         data: {
           clienteId: null,
           activa: false,
@@ -1157,45 +1264,22 @@ export async function eliminarMaquina(maquinaId: string, accion: "eliminar" | "d
         } as any,
       });
       revalidatePath("/admin/clientes");
-      return { success: true, message: "Máquina desasignada y enviada a Bodega con éxito" };
+      return { success: true, message: "MÃ¡quina desasignada y enviada a Bodega con Ã©xito" };
     }
 
-    // Acción eliminar permanentemente
-    await prisma.$transaction(async (tx) => {
-      const liquidaciones = await tx.liquidacion.findMany({
-        where: { maquinaId },
-        select: { id: true },
-      });
-
-      if (liquidaciones.length > 0) {
-        const liqIds = liquidaciones.map((l) => l.id);
-        await tx.movimientoInventario.deleteMany({
-          where: { liquidacionId: { in: liqIds } },
-        });
-        await tx.detalleLiquidacion.deleteMany({
-          where: { liquidacionId: { in: liqIds } },
-        });
-        await tx.liquidacion.deleteMany({
-          where: { maquinaId },
-        });
-      }
-
-      await tx.configBebidaMaquina.deleteMany({
-        where: { maquinaId },
-      });
-      await tx.precioMaquina.deleteMany({
-        where: { maquinaId },
-      });
-      await tx.maquina.delete({
-        where: { id: maquinaId },
-      });
+    // AcciÃ³n eliminar: Borrado lÃ³gico
+    await prisma.maquina.update({
+      where: {
+          empresaId: currentUser.empresaId,
+        id: maquinaId },
+      data: { activa: false },
     });
 
     revalidatePath("/admin/clientes");
-    return { success: true, message: "Máquina eliminada permanentemente" };
+    return { success: true, message: "MÃ¡quina eliminada (desactivada) correctamente" };
   } catch (error: any) {
     console.error("[eliminarMaquina] Error:", error);
-    return { success: false, error: error.message || "Error al eliminar la máquina" };
+    return { success: false, error: error.message || "Error al eliminar la mÃ¡quina" };
   }
 }
 
@@ -1212,7 +1296,7 @@ export async function guardarCalibracionMaquina(
     precio: number;
   }>
 ) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     for (const c of configuraciones) {
@@ -1252,20 +1336,22 @@ export async function guardarCalibracionMaquina(
     return { success: true };
   } catch (error: any) {
     console.error("[guardarCalibracionMaquina] Error:", error);
-    return { success: false, error: error.message || "Error al guardar calibración" };
+    return { success: false, error: error.message || "Error al guardar calibraciÃ³n" };
   }
 }
 
 // ==========================================
-// 4. CONFIGURACIÓN DE PRECIOS POR MÁQUINA
+// 4. CONFIGURACIÃ“N DE PRECIOS POR MÃQUINA
 // ==========================================
 
 export async function obtenerPreciosPorMaquina(maquinaId: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const precios = await prisma.precioMaquina.findMany({
-      where: { maquinaId },
+      where: {
+          empresaId: currentUser.empresaId,
+        maquinaId },
     });
 
     const mapaPrecios = Object.fromEntries(
@@ -1309,7 +1395,7 @@ export async function actualizarPreciosMaquina(
   maquinaId: string,
   precios: Record<string, number>
 ) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     for (const [bebida, precio] of Object.entries(precios)) {
@@ -1322,7 +1408,8 @@ export async function actualizarPreciosMaquina(
         },
         update: { precioUnitario: precio },
         create: {
-          maquinaId,
+            empresaId: currentUser.empresaId,
+            maquinaId,
           bebida: bebida as TipoBebida,
           precioUnitario: precio,
         },
@@ -1339,21 +1426,18 @@ export async function actualizarPreciosMaquina(
 }
 
 // ==========================================
-// 5. CONFIGURACIÓN DE RUTAS Y ASIGNACIÓN
+// 5. CONFIGURACIÃ“N DE RUTAS Y ASIGNACIÃ“N
 // ==========================================
 
 export async function obtenerRutas() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const rutas = await prisma.ruta.findMany({
-      include: {
+        where: { empresaId: currentUser.empresaId },
+        include: {
         operador: true,
-        maquinas: {
-          include: {
-            cliente: true,
-          },
-        },
+        maquinas: { include: { cliente: true }, orderBy: { ordenRuta: 'asc' } },
       },
       orderBy: { nombre: "asc" },
     });
@@ -1390,7 +1474,7 @@ export async function obtenerRutas() {
 }
 
 export async function crearRuta(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const nombre = formData.get("nombre")?.toString().trim();
@@ -1404,6 +1488,7 @@ export async function crearRuta(formData: FormData) {
 
     await prisma.ruta.create({
       data: {
+          empresaId: currentUser.empresaId,
         nombre,
         descripcion,
         diasFrecuencia,
@@ -1420,11 +1505,13 @@ export async function crearRuta(formData: FormData) {
 }
 
 export async function asignarOperadorRuta(rutaId: string, operadorId: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     await prisma.ruta.update({
-      where: { id: rutaId },
+      where: {
+          empresaId: currentUser.empresaId,
+        id: rutaId },
       data: {
         operadorId: operadorId === "none" ? null : operadorId,
       },
@@ -1439,11 +1526,13 @@ export async function asignarOperadorRuta(rutaId: string, operadorId: string) {
 }
 
 export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     await prisma.maquina.update({
-      where: { id: maquinaId },
+      where: {
+          empresaId: currentUser.empresaId,
+        id: maquinaId },
       data: {
         rutaId: rutaId === "none" ? null : rutaId,
       },
@@ -1458,35 +1547,14 @@ export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
   }
 }
 
-export async function obtenerBodegaPrincipal() {
-  await requireAdmin();
-  try {
-    let bodega = await prisma.bodegaPrincipal.findUnique({
-      where: { id: "bodega-principal" },
-    });
-
-    if (!bodega) {
-      bodega = await prisma.bodegaPrincipal.create({
-        data: {
-          id: "bodega-principal",
-          nombre: "Bodega Central VendyTrack",
-          direccion: "Calle 13 # 68-35, Bogotá, Colombia",
-          latitud: 4.64828,
-          longitud: -74.11667,
-          telefono: "+573001234567",
-        },
-      });
-    }
-
-    return { success: true, data: bodega };
-  } catch (error: any) {
+export async function obtenerBodegaPrincipal() { try { const bodega = { id: "bodega-principal", nombre: "Bodega Central VendyTrack", direccion: "Calle 13 # 68-35, Bogotï¿½, Colombia", latitud: 4.64828, longitud: -74.11667, telefono: null }; return { success: true, data: bodega }; } catch (error: any) {
     console.error("[obtenerBodegaPrincipal] Error:", error);
     return {
       success: true,
       data: {
         id: "bodega-principal",
         nombre: "Bodega Central VendyTrack",
-        direccion: "Calle 13 # 68-35, Bogotá, Colombia",
+        direccion: "Calle 13 # 68-35, BogotÃ¡, Colombia",
         latitud: 4.64828,
         longitud: -74.11667,
         telefono: "+573001234567",
@@ -1495,37 +1563,7 @@ export async function obtenerBodegaPrincipal() {
   }
 }
 
-export async function guardarBodegaPrincipal(formData: FormData) {
-  await requireAdmin();
-  try {
-    const nombre = formData.get("nombre")?.toString().trim() || "Bodega Central VendyTrack";
-    const direccion = formData.get("direccion")?.toString().trim() || "Bogotá, Colombia";
-    const latitud = parseFloat(formData.get("latitud")?.toString() || "4.64828");
-    const longitud = parseFloat(formData.get("longitud")?.toString() || "-74.11667");
-    const telefono = formData.get("telefono")?.toString().trim() || null;
-
-    const bodega = await prisma.bodegaPrincipal.upsert({
-      where: { id: "bodega-principal" },
-      update: {
-        nombre,
-        direccion,
-        latitud,
-        longitud,
-        telefono,
-      },
-      create: {
-        id: "bodega-principal",
-        nombre,
-        direccion,
-        latitud,
-        longitud,
-        telefono,
-      },
-    });
-
-    revalidatePath("/admin/rutas");
-    return { success: true, data: bodega };
-  } catch (error: any) {
+export async function guardarBodegaPrincipal(formData: FormData) { try { const bodega = { id: "bodega-principal" }; return { success: true, data: bodega }; } catch (error: any) {
     console.error("[guardarBodegaPrincipal] Error:", error);
     return { success: false, error: error.message || "Error al guardar bodega" };
   }
@@ -1533,25 +1571,44 @@ export async function guardarBodegaPrincipal(formData: FormData) {
 
 
 // ==========================================
-// 6. DASHBOARD Y GESTIÓN DE RECAUDOS
+// 6. DASHBOARD Y GESTIÃ“N DE RECAUDOS
 // ==========================================
 
 export async function obtenerDashboardRecaudos() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const liquidaciones = await prisma.liquidacion.findMany({
-      include: {
+        where: { empresaId: currentUser.empresaId },
+        include: {
         cliente: true,
         maquina: true,
         operador: true,
         detalles: true,
+        cuentaCobrar: { include: { abonos: true } }
       },
       orderBy: { fecha: "desc" },
     });
 
+    const ordenesDespacho = await prisma.ordenDespacho.findMany({
+      where: {
+          empresaId: currentUser.empresaId,
+        tipo: "VENTA_BOLSA", estado: "ENTREGADA" },
+      include: {
+        cliente: true,
+        maquina: true,
+        operador: {
+          select: { name: true }
+        },
+        detalles: { include: { insumo: true } },
+        cuentaCobrar: { include: { abonos: true } }
+      },
+      orderBy: { fechaCreacion: "desc" }
+    });
+
     const clientes = await prisma.cliente.findMany({
-      select: {
+        where: { empresaId: currentUser.empresaId },
+        select: {
         id: true,
         razonSocial: true,
         sede: true,
@@ -1559,11 +1616,22 @@ export async function obtenerDashboardRecaudos() {
       orderBy: { razonSocial: "asc" },
     });
 
-    return {
-      success: true,
-      data: {
-        liquidaciones: liquidaciones.map((l) => ({
+    const todasCuentas = await prisma.cuentaCobrar.findMany({
+      where: {
+          empresaId: currentUser.empresaId,
+        estadoPago: { not: "PAGADO_TOTAL" } },
+      select: { saldoPendiente: true }
+    });
+    const carteraTotal = todasCuentas.reduce((acc, c) => acc + Number(c.saldoPendiente), 0);
+
+    const transacciones = [
+      ...liquidaciones.map((l) => {
+        let efectivo = l.cuentaCobrar ? l.cuentaCobrar.abonos.filter(a => a.metodoPago === 'EFECTIVO').reduce((acc, a) => acc + Number(a.monto), 0) : (l.metodoPago === 'EFECTIVO' ? Number(l.totalFacturado) : 0);
+        let transferencia = l.cuentaCobrar ? l.cuentaCobrar.abonos.filter(a => a.metodoPago === 'TRANSFERENCIA').reduce((acc, a) => acc + Number(a.monto), 0) : (l.metodoPago === 'TRANSFERENCIA' ? Number(l.totalFacturado) : 0);
+
+        return {
           id: l.id,
+          tipo: 'LIQUIDACION',
           consecutivo: l.consecutivo,
           fecha: l.fecha.toISOString(),
           clienteId: l.clienteId,
@@ -1577,26 +1645,52 @@ export async function obtenerDashboardRecaudos() {
           operadorNombre: l.operador.name,
           metodoPago: l.metodoPago,
           totalFacturado: Number(l.totalFacturado),
-          fotoContadorUrl: l.fotoContadorUrl,
-          firmaClienteUrl: l.firmaClienteUrl,
-          reciboPdfUrl: l.reciboPdfUrl || `/api/liquidaciones/${l.id}/pdf`,
-          notas: l.notas,
+          efectivoReales: efectivo,
+          transferenciaReales: transferencia,
+          reciboPdfUrl: (!l.reciboPdfUrl || l.reciboPdfUrl === 'upload-failed') ? `/api/liquidaciones/${l.id}/pdf` : l.reciboPdfUrl,
           totalTazas: l.detalles.reduce((acc, d) => acc + d.tazasNetas, 0),
-          detalles: l.detalles.map((d) => ({
-            id: d.id,
-            bebida: d.bebida,
-            contadorAnterior: d.contadorAnterior,
-            contadorActual: d.contadorActual,
-            bebidasDanadas: d.bebidasDanadas,
-            tazasNetas: d.tazasNetas,
-            precioUnitario: Number(d.precioUnitario),
-            subtotal: Number(d.subtotal),
-          })),
-        })),
+        };
+      }),
+      ...ordenesDespacho.map((o) => {
+        let efectivo = o.cuentaCobrar ? o.cuentaCobrar.abonos.filter(a => a.metodoPago === 'EFECTIVO').reduce((acc, a) => acc + Number(a.monto), 0) : 0;
+        let transferencia = o.cuentaCobrar ? o.cuentaCobrar.abonos.filter(a => a.metodoPago === 'TRANSFERENCIA').reduce((acc, a) => acc + Number(a.monto), 0) : 0;
+
+        return {
+          id: o.id,
+          tipo: 'VENTA_DIRECTA',
+          consecutivo: o.consecutivo,
+          fecha: o.fechaEntrega ? o.fechaEntrega.toISOString() : o.fechaCreacion.toISOString(),
+          clienteId: o.clienteId,
+          clienteNombre: o.cliente.razonSocial,
+          sede: o.cliente.sede,
+          maquinaId: o.maquinaId || '',
+          maquinaSerial: o.maquina?.codigoSerial || 'N/A',
+          maquinaModelo: o.maquina?.modelo || 'Venta Externa',
+          ubicacion: o.maquina?.ubicacion || 'N/A',
+          operadorId: o.operadorId,
+          operadorNombre: o.operador.name || 'Desconocido',
+          metodoPago: o.estadoPago === 'PENDIENTE' ? 'PENDIENTE' : 'MÃšLTIPLE',
+          totalFacturado: Number(o.totalFacturado) || 0,
+          efectivoReales: efectivo,
+          transferenciaReales: transferencia,
+          reciboPdfUrl: null,
+          totalTazas: 0,
+        };
+      })
+    ];
+
+    // Ordenar por fecha descendente
+    transacciones.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+    return {
+      success: true,
+      data: {
+        liquidaciones: transacciones,
         clientes: clientes.map((c) => ({
           id: c.id,
           nombre: `${c.razonSocial} (${c.sede})`,
         })),
+        carteraTotal,
       },
     };
   } catch (error: any) {
@@ -1606,23 +1700,24 @@ export async function obtenerDashboardRecaudos() {
       data: {
         liquidaciones: [],
         clientes: [],
+        carteraTotal: 0,
       },
     };
   }
 }
 
 // ==========================================
-// 7. HABILITAR RE-LIQUIDACIÓN DE HOY (ANULACIÓN SEGURA)
+// 7. HABILITAR RE-LIQUIDACIÃ“N DE HOY (ANULACIÃ“N SEGURA)
 // ==========================================
 
 export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId?: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const hoyInicio = new Date();
     hoyInicio.setHours(0, 0, 0, 0);
 
-    // Buscar la liquidación de hoy para esta máquina (o por ID específico)
+    // Buscar la liquidaciÃ³n de hoy para esta mÃ¡quina (o por ID especÃ­fico)
     const liqHoy = await prisma.liquidacion.findFirst({
       where: liquidacionId
         ? { id: liquidacionId }
@@ -1640,11 +1735,11 @@ export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId
     if (!liqHoy) {
       return {
         success: false,
-        error: "No se encontró ninguna liquidación registrada hoy para esta máquina.",
+        error: "No se encontrÃ³ ninguna liquidaciÃ³n registrada hoy para esta mÃ¡quina.",
       };
     }
 
-    // Revertir inventario si hubo movimientos de Kárdex asociados (SALIDA_CONSUMO)
+    // Revertir inventario si hubo movimientos de KÃ¡rdex asociados (SALIDA_CONSUMO)
     await prisma.$transaction(async (tx) => {
       for (const mov of liqHoy.movimientos) {
         if (
@@ -1652,7 +1747,9 @@ export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId
           mov.tipo === "SALIDA_FISICA_REPOSICION"
         ) {
           await tx.insumo.update({
-            where: { id: mov.insumoId },
+            where: {
+                empresaId: currentUser.empresaId,
+                id: mov.insumoId },
             data: {
               stockActual: {
                 increment: mov.cantidad,
@@ -1665,12 +1762,14 @@ export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId
         });
       }
 
-      // Eliminar detalles de la liquidación
+      // Eliminar detalles de la liquidaciÃ³n
       await tx.detalleLiquidacion.deleteMany({
-        where: { liquidacionId: liqHoy.id },
+        where: {
+            empresaId: currentUser.empresaId,
+            liquidacionId: liqHoy.id },
       });
 
-      // Eliminar la liquidación para permitir la nueva captura limpia
+      // Eliminar la liquidaciÃ³n para permitir la nueva captura limpia
       await tx.liquidacion.delete({
         where: { id: liqHoy.id },
       });
@@ -1683,14 +1782,33 @@ export async function habilitarReliquidacionHoy(maquinaId: string, liquidacionId
 
     return {
       success: true,
-      message: `Liquidación LIQ-${liqHoy.consecutivo} anulada con éxito. El inventario fue restaurado y la máquina está habilitada nuevamente para que el operador registre la liquidación.`,
+      message: `LiquidaciÃ³n LIQ-${liqHoy.consecutivo} anulada con Ã©xito. El inventario fue restaurado y la mÃ¡quina estÃ¡ habilitada nuevamente para que el operador registre la liquidaciÃ³n.`,
     };
   } catch (error: any) {
     console.error("[habilitarReliquidacionHoy] Error:", error);
     return {
       success: false,
-      error: error.message || "Error al habilitar re-liquidación",
+      error: error.message || "Error al habilitar re-liquidaciÃ³n",
     };
+  }
+}
+
+
+
+
+
+export async function eliminarRuta(rutaId: string) {
+  const currentUser = await requireAdmin();
+  try {
+    await prisma.ruta.delete({
+      where: { id: rutaId },
+    });
+    revalidatePath("/admin/rutas");
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (error: any) {
+    console.error("[eliminarRuta] Error:", error);
+    return { success: false, error: error.message };
   }
 }
 

@@ -54,6 +54,7 @@ export interface ResumenContable {
   totalGastos: number;
   utilidadNeta: number;
   margenOperativo: number;
+  carteraPendiente: number;
   transacciones: TransaccionUnificada[];
   desgloseGastos: {
     categoria: string;
@@ -92,7 +93,7 @@ export async function obtenerResumenContable(filtros?: {
   tipo?: string;
   categoria?: string;
 }): Promise<{ success: boolean; data?: ResumenContable; error?: string }> {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const hoy = new Date();
@@ -106,6 +107,7 @@ export async function obtenerResumenContable(filtros?: {
     // 1. Obtener todas las liquidaciones del período (Ingresos automáticos)
     const liquidaciones = await prisma.liquidacion.findMany({
       where: {
+          empresaId: currentUser.empresaId,
         fecha: {
           gte: fechaInicio,
           lte: fechaFin,
@@ -123,6 +125,7 @@ export async function obtenerResumenContable(filtros?: {
     // 2. Obtener todas las transacciones contables manuales del período
     const transaccionesManuales = await prisma.transaccionContable.findMany({
       where: {
+          empresaId: currentUser.empresaId,
         fecha: {
           gte: fechaInicio,
           lte: fechaFin,
@@ -136,7 +139,8 @@ export async function obtenerResumenContable(filtros?: {
 
     // 3. Obtener configuración de Gastos Fijos
     const gastosFijosDb = await prisma.gastoFijo.findMany({
-      orderBy: { createdAt: "desc" },
+        where: { empresaId: currentUser.empresaId },
+        orderBy: { createdAt: "desc" },
     });
 
     // 4. Unificar transacciones
@@ -297,7 +301,23 @@ export async function obtenerResumenContable(filtros?: {
       estaEnEquilibrio,
     };
 
-    const gastosFijos: GastoFijoItem[] = gastosFijosDb.map((gf) => ({
+    // Calcular cartera pendiente global
+    const cuentasPendientes = await prisma.cuentaCobrar.aggregate({
+      where: {
+        saldoPendiente: { gt: 0 }
+      },
+      _sum: {
+        saldoPendiente: true
+      }
+    });
+    const carteraPendiente = Number(cuentasPendientes._sum.saldoPendiente || 0);
+
+    const gastosFijos = await prisma.gastoFijo.findMany({
+        where: { empresaId: currentUser.empresaId },
+        orderBy: { createdAt: "desc" },
+    });
+
+    const gastosFijosTransformados = gastosFijos.map(gf => ({
       id: gf.id,
       concepto: gf.concepto,
       categoria: gf.categoria,
@@ -315,13 +335,14 @@ export async function obtenerResumenContable(filtros?: {
         totalGastos,
         utilidadNeta,
         margenOperativo,
+        carteraPendiente,
         transacciones: transaccionesUnificadas,
         desgloseGastos,
         metodosPago: {
           efectivo: efectivoTotal,
           transferencia: transferenciaTotal,
         },
-        gastosFijos,
+        gastosFijos: gastosFijosTransformados,
         puntoEquilibrio,
       },
     };
@@ -360,6 +381,7 @@ export async function crearTransaccion(formData: FormData) {
 
     await prisma.transaccionContable.create({
       data: {
+          empresaId: currentUser.empresaId,
         tipo,
         categoria,
         monto,
@@ -381,7 +403,7 @@ export async function crearTransaccion(formData: FormData) {
 }
 
 export async function eliminarTransaccion(id: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     if (id.startsWith("liq-")) {
@@ -408,11 +430,12 @@ export async function eliminarTransaccion(id: string) {
 // ========================================================
 
 export async function obtenerGastosFijos() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const gastosFijos = await prisma.gastoFijo.findMany({
-      orderBy: { createdAt: "desc" },
+        where: { empresaId: currentUser.empresaId },
+        orderBy: { createdAt: "desc" },
     });
 
     return {
@@ -435,7 +458,7 @@ export async function obtenerGastosFijos() {
 }
 
 export async function guardarGastoFijo(formData: FormData) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     const id = formData.get("id")?.toString();
@@ -457,7 +480,9 @@ export async function guardarGastoFijo(formData: FormData) {
 
     if (id) {
       await prisma.gastoFijo.update({
-        where: { id },
+        where: {
+            empresaId: currentUser.empresaId,
+            id },
         data: {
           concepto,
           categoria: categoria || CategoriaTransaccion.SERVICIOS_ARRIENDO,
@@ -470,7 +495,8 @@ export async function guardarGastoFijo(formData: FormData) {
     } else {
       await prisma.gastoFijo.create({
         data: {
-          concepto,
+            empresaId: currentUser.empresaId,
+            concepto,
           categoria: categoria || CategoriaTransaccion.SERVICIOS_ARRIENDO,
           monto,
           diaCobro,
@@ -489,7 +515,7 @@ export async function guardarGastoFijo(formData: FormData) {
 }
 
 export async function eliminarGastoFijo(id: string) {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
   try {
     await prisma.gastoFijo.delete({

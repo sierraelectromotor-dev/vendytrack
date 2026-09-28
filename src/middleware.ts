@@ -2,17 +2,24 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE_NAME = "vendytrack_session";
-const SESSION_SECRET =
-  process.env.SESSION_SECRET ||
-  process.env.NEXTAUTH_SECRET ||
-  process.env.AUTH_SECRET ||
-  "vendytrack_secure_session_key_2026_prod";
+
+function getSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SESSION_SECRET no configurado");
+    }
+    return "dev-only-insecure-key-vendytrack-2026-do-not-use-in-prod";
+  }
+  return secret;
+}
 
 interface SessionPayload {
   id: string;
   name: string;
   email: string;
-  rol: "ADMIN" | "OPERADOR_RUTA" | "CLIENTE";
+  rol: "ADMIN" | "OPERADOR_RUTA" | "CLIENTE" | "SUPERADMIN";
+  empresaId: string;
   clienteId?: string | null;
 }
 
@@ -27,7 +34,7 @@ async function verifySessionEdge(token: string): Promise<SessionPayload | null> 
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
       "raw",
-      encoder.encode(SESSION_SECRET),
+      encoder.encode(getSecret()),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["verify"]
@@ -47,7 +54,19 @@ async function verifySessionEdge(token: string): Promise<SessionPayload | null> 
     if (!isValid) return null;
 
     const json = atob(payload);
-    return JSON.parse(json) as SessionPayload;
+    const parsed = JSON.parse(json);
+
+    // Validar expiración
+    if (parsed.exp && Math.floor(Date.now() / 1000) > parsed.exp) {
+      return null;
+    }
+
+    // Validar campos requeridos para la sesión multi-tenant
+    if (!parsed.id || !parsed.email || !parsed.rol || !parsed.empresaId) {
+      return null;
+    }
+
+    return parsed as SessionPayload;
   } catch {
     return null;
   }
@@ -69,50 +88,81 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Permitir acceso a la descarga del recibo PDF (enlaces directos compartidos por WhatsApp)
-  if (pathname.startsWith("/api/liquidaciones/") && pathname.endsWith("/pdf")) {
-    return NextResponse.next();
-  }
-
   // 2. Verificar la cookie de sesión criptográfica (HMAC-SHA256)
   const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const user = sessionToken ? await verifySessionEdge(sessionToken) : null;
 
-  // Si no está autenticado
+  // Si no está autenticado o la cookie es inválida / obsoleta
   if (!user) {
     if (pathname === "/login") {
-      return NextResponse.next();
+      const response = NextResponse.next();
+      if (sessionToken) {
+        // Eliminar cookie dañada/obsoleta para evitar bucles de redirección
+        response.cookies.delete(SESSION_COOKIE_NAME);
+      }
+      return response;
     }
+
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    if (sessionToken) {
+      // Eliminar cookie dañada/obsoleta
+      response.cookies.delete(SESSION_COOKIE_NAME);
+    }
+    return response;
   }
+
+  // Función auxiliar para redirigir según el rol del usuario
+  const getDestinationForRole = (rol: string) => {
+    switch (rol) {
+      case "SUPERADMIN":
+        return "/superadmin";
+      case "ADMIN":
+        return "/admin";
+      case "CLIENTE":
+        return "/cliente";
+      default:
+        return "/rutero";
+    }
+  };
 
   // Si ya está autenticado e intenta ir a /login
   if (pathname === "/login") {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = user.rol === "CLIENTE" ? "/cliente" : "/";
-    return NextResponse.redirect(homeUrl);
+    const destUrl = request.nextUrl.clone();
+    destUrl.pathname = getDestinationForRole(user.rol);
+    return NextResponse.redirect(destUrl);
   }
 
-  // 3. Control de Rutas según RBAC estricto
-  if (pathname.startsWith("/admin") && user.rol !== "ADMIN") {
+  // Si está en la raíz (/), enviar directamente a su dashboard
+  if (pathname === "/") {
+    const destUrl = request.nextUrl.clone();
+    destUrl.pathname = getDestinationForRole(user.rol);
+    return NextResponse.redirect(destUrl);
+  }
+
+  // 3. Control de Rutas según RBAC
+  if (pathname.startsWith("/superadmin") && user.rol !== "SUPERADMIN") {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
-    url.searchParams.set("error", "unauthorized_admin");
+    url.pathname = getDestinationForRole(user.rol);
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith("/cliente") && user.rol !== "CLIENTE" && user.rol !== "ADMIN") {
+  if (pathname.startsWith("/admin") && user.rol !== "ADMIN" && user.rol !== "SUPERADMIN") {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
-    url.searchParams.set("error", "unauthorized_cliente");
+    url.pathname = getDestinationForRole(user.rol);
     return NextResponse.redirect(url);
   }
 
-  if (pathname === "/" && user.rol === "CLIENTE") {
+  if (pathname.startsWith("/cliente") && user.rol !== "CLIENTE" && user.rol !== "ADMIN" && user.rol !== "SUPERADMIN") {
     const url = request.nextUrl.clone();
-    url.pathname = "/cliente";
+    url.pathname = getDestinationForRole(user.rol);
+    return NextResponse.redirect(url);
+  }
+
+  if (pathname.startsWith("/rutero") && user.rol !== "OPERADOR_RUTA" && user.rol !== "ADMIN" && user.rol !== "SUPERADMIN") {
+    const url = request.nextUrl.clone();
+    url.pathname = getDestinationForRole(user.rol);
     return NextResponse.redirect(url);
   }
 

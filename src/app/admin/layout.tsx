@@ -6,6 +6,7 @@ import {
   Coffee,
   LayoutDashboard,
   Package,
+  PackagePlus,
   Truck,
   Building2,
   DollarSign,
@@ -34,12 +35,15 @@ export default async function AdminLayout({
     .toUpperCase();
 
   const navItems = [
-    { href: "/admin", label: "Dashboard / Recaudos", icon: LayoutDashboard },
-    { href: "/admin/contabilidad", label: "Contabilidad y Gastos", icon: DollarSign },
-    { href: "/admin/clientes", label: "Clientes y Máquinas", icon: Building2 },
-    { href: "/admin/inventario", label: "Inventario Bodega", icon: Package },
+    { href: "/admin", label: "Dashboard General", icon: LayoutDashboard },
+    { href: "/admin/inventario", label: "Inventario y Bodegas", icon: Package },
+    { href: "/admin/produccion", label: "Producción y Recetas", icon: PackagePlus },
+    { href: "/admin/despachos", label: "Órdenes de Despacho", icon: Truck },
     { href: "/admin/rutas", label: "Rutas y Asignaciones", icon: MapPin },
-    { href: "/admin/ruteros", label: "Usuarios y Ruteros", icon: Users },
+    { href: "/admin/clientes", label: "Clientes y Máquinas", icon: Building2 },
+    { href: "/admin/cartera", label: "Cartera y Cobros", icon: DollarSign },
+    { href: "/admin/contabilidad", label: "Contabilidad y Gastos", icon: DollarSign },
+    { href: "/admin/ruteros", label: "Usuarios y Personal", icon: Users },
   ];
 
   return (
@@ -85,7 +89,7 @@ export default async function AdminLayout({
         {/* Pie de Sidebar con acceso a Vista Móvil, Reinicio y Cerrar Sesión */}
         <div className="p-3 border-t border-stone-200 dark:border-stone-800 space-y-1.5">
           <Link
-            href="/"
+            href="/rutero"
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-stone-500 hover:text-coffee-700 dark:hover:text-amber-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
           >
             <Smartphone className="w-4 h-4 text-stone-400" />

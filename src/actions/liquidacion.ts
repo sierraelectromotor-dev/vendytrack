@@ -22,8 +22,9 @@ import { getCurrentUser } from "@/lib/auth";
  */
 export async function obtenerDatosMaquina(maquinaId: string) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
+    const currentUser = await getCurrentUser();
+    const user = currentUser;
+    if (!currentUser) {
       return { success: false, error: "No autorizado: Inicia sesión." };
     }
 
@@ -114,6 +115,12 @@ export async function obtenerDatosMaquina(maquinaId: string) {
       }));
     }
 
+    const hoyInicio = new Date();
+    hoyInicio.setHours(0, 0, 0, 0);
+    const ultimaLiq = maquina.liquidaciones[0];
+    const liquidadaHoy = ultimaLiq ? new Date(ultimaLiq.fecha) >= hoyInicio : false;
+    const totalTazas = ultimaLiq?.detalles.reduce((acc: number, d: any) => acc + d.tazasNetas, 0) || 0;
+
     return {
       success: true,
       data: {
@@ -124,6 +131,14 @@ export async function obtenerDatosMaquina(maquinaId: string) {
           ubicacion: maquina.ubicacion,
           numeroProductos: maquina.numeroProductos,
           tipo: "MANUAL_RUTA",
+          liquidadaHoy,
+          ultimoConsecutivo: ultimaLiq?.consecutivo,
+          ultimaLiquidacionFecha: ultimaLiq?.fecha,
+          ultimoTotalFacturado: ultimaLiq?.totalFacturado,
+          ultimoTotalTazas: totalTazas,
+          ultimoMetodoPago: ultimaLiq?.metodoPago,
+          ultimoReciboPdfUrl: ultimaLiq?.reciboPdfUrl,
+          ultimaLiquidacionId: ultimaLiq?.id,
         },
         cliente: {
           id: maquina.cliente.id,
@@ -159,6 +174,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
   try {
     // 1. Verificar autenticación del operador
     const currentUser = await getCurrentUser();
+    const user = currentUser;
     if (!currentUser) {
       return { success: false, error: "Debes iniciar sesión para registrar una liquidación." };
     }
@@ -166,12 +182,23 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     // 2. Validación estricta con Zod
     const validatedData = liquidacionFormSchema.parse(formData);
 
-    // 2.1 Verificar si la máquina ya fue liquidada hoy (bloqueo estricto contra reenvío)
+    // Verificar que la máquina pertenece a una ruta asignada al operador
+    if (currentUser.rol !== 'ADMIN') {
+      const maquinaCheck = await prisma.maquina.findUnique({
+        where: { id: validatedData.maquinaId },
+        select: { ruta: { select: { operadorId: true } } },
+      });
+      if (!maquinaCheck?.ruta || maquinaCheck.ruta.operadorId !== currentUser.id) {
+        return { success: false, error: 'No tienes permiso para liquidar esta máquina.' };
+      }
+    }
+
+    // 2.1 Verificar si la máquina ya fue liquidada hoy (bloqueo estricto contra reenvío) - Fast Path
     const hoyInicio = new Date();
     hoyInicio.setHours(0, 0, 0, 0);
 
     const liqExistenteHoy = await prisma.liquidacion.findFirst({
-      where: {
+      where: { empresaId: currentUser.empresaId,
         maquinaId: validatedData.maquinaId,
         fecha: { gte: hoyInicio },
       },
@@ -210,29 +237,6 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     // Garantizar que la firma nunca sea vacía ni una URL rota
     const firmaClienteUrl = uploadedFirmaUrl || validatedData.firmaClienteBase64;
 
-    // 4. Cálculos matemáticos en servidor
-    let totalTazasNetas = 0;
-    let totalFacturado = 0;
-
-    const lineasCalculadas = validatedData.detalles.map((d) => {
-      const subtotalContador = d.contadorActual - d.contadorAnterior;
-      const tazasNetas = Math.max(0, subtotalContador - d.bebidasDanadas);
-      const valorLinea = tazasNetas * d.precioUnitario;
-
-      totalTazasNetas += tazasNetas;
-      totalFacturado += valorLinea;
-
-      return {
-        bebida: d.bebida,
-        contadorAnterior: d.contadorAnterior,
-        contadorActual: d.contadorActual,
-        bebidasDanadas: d.bebidasDanadas,
-        tazasNetas,
-        precioUnitario: d.precioUnitario,
-        subtotal: valorLinea,
-      };
-    });
-
     // 5. Validar existencia real de cliente y máquina en la base de datos
     const clienteDb = await prisma.cliente.findUnique({
       where: { id: validatedData.clienteId },
@@ -254,20 +258,105 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
     const operadorNombre = currentUser.name;
 
     // Transacción en base de datos
-    const nuevaLiquidacion = await prisma.$transaction(async (tx) => {
-      // A. Crear cabecera de liquidación
+    const txResult = await prisma.$transaction(async (tx) => {
+      // 0. Revisión de liquidación existente dentro de transacción
+      if (currentUser.rol !== "ADMIN") {
+        const liqExistente = await tx.liquidacion.findFirst({
+          where: { empresaId: currentUser.empresaId,
+            maquinaId: validatedData.maquinaId, fecha: { gte: hoyInicio } },
+        });
+        if (liqExistente) {
+          throw new Error("Esta máquina ya fue liquidada hoy. Intento bloqueado.");
+        }
+      }
+
+      // Obtener precios oficiales del servidor
+      const preciosOficiales = await tx.precioMaquina.findMany({
+        where: { empresaId: currentUser.empresaId,
+            maquinaId: validatedData.maquinaId },
+      });
+      const preciosConfig = await tx.configBebidaMaquina.findMany({
+        where: { empresaId: currentUser.empresaId,
+            maquinaId: validatedData.maquinaId },
+      });
+      
+      // Crear mapa de precios oficiales
+      const precioMap = new Map<string, number>();
+      preciosOficiales.forEach(p => precioMap.set(p.bebida, Number(p.precioUnitario)));
+      preciosConfig.forEach(c => {
+        if (!precioMap.has(c.bebida)) {
+          precioMap.set(c.bebida, Number(c.precio));
+        }
+      });
+
+      // 4. Cálculos matemáticos en servidor
+      let totalTazasNetas = 0;
+      let totalFacturado = 0;
+
+      const lineasCalculadas = validatedData.detalles.map((d) => {
+        const subtotalContador = d.contadorActual - d.contadorAnterior;
+        const tazasNetas = Math.max(0, subtotalContador - d.bebidasDanadas);
+        const precioOficial = precioMap.get(d.bebida) || d.precioUnitario;
+        const valorLinea = tazasNetas * precioOficial;
+
+        totalTazasNetas += tazasNetas;
+        totalFacturado += valorLinea;
+
+        return {
+          bebida: d.bebida,
+          contadorAnterior: d.contadorAnterior,
+          contadorActual: d.contadorActual,
+          bebidasDanadas: d.bebidasDanadas,
+          tazasNetas,
+          precioUnitario: precioOficial,
+          subtotal: valorLinea,
+        };
+      });
+
+      const montoEfectivo = validatedData.montoEfectivo || 0;
+      const montoTransferencia = validatedData.montoTransferencia || 0;
+      const montoTotalPagado = montoEfectivo + montoTransferencia;
+      const saldoPendiente = Math.max(0, totalFacturado - montoTotalPagado);
+      
+      let estadoPago: "PENDIENTE" | "PAGADO_PARCIAL" | "PAGADO_TOTAL" = "PENDIENTE";
+      if (saldoPendiente === 0) estadoPago = "PAGADO_TOTAL";
+      else if (saldoPendiente < totalFacturado) estadoPago = "PAGADO_PARCIAL";
+
+      const abonosData: any[] = [];
+      if (montoEfectivo > 0) {
+        abonosData.push({
+          empresaId: currentUser.empresaId,
+          monto: montoEfectivo,
+          metodoPago: "EFECTIVO",
+          registradoPor: { connect: { id: operadorId } },
+          fecha: new Date(),
+        });
+      }
+      if (montoTransferencia > 0) {
+        abonosData.push({
+          monto: montoTransferencia,
+          metodoPago: "TRANSFERENCIA",
+          registradoPor: { connect: { id: operadorId } },
+          fecha: new Date(),
+        });
+      }
+
+      // A. Crear cabecera de liquidación con CuentaCobrar
       const liq = await tx.liquidacion.create({
         data: {
-          clienteId: validatedData.clienteId,
-          maquinaId: validatedData.maquinaId,
-          operadorId: operadorId,
-          metodoPago: validatedData.metodoPago,
+              empresa: { connect: { id: currentUser.empresaId } },
+            cliente: { connect: { id: validatedData.clienteId } },
+          maquina: { connect: { id: validatedData.maquinaId } },
+          operador: { connect: { id: operadorId } },
+          metodoPago: montoTransferencia > 0 && montoEfectivo === 0 ? "TRANSFERENCIA" : "EFECTIVO",
           totalFacturado: totalFacturado,
+          estadoPago: estadoPago,
           fotoContadorUrl: fotoContadorUrl,
           firmaClienteUrl: firmaClienteUrl,
           notas: validatedData.notas,
           detalles: {
             create: lineasCalculadas.map((l) => ({
+                empresaId: currentUser.empresaId,
               bebida: l.bebida,
               contadorAnterior: l.contadorAnterior,
               contadorActual: l.contadorActual,
@@ -277,16 +366,30 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
               subtotal: l.subtotal,
             })),
           },
+          cuentaCobrar: {
+            create: {
+                empresa: { connect: { id: currentUser.empresaId } },
+                  cliente: { connect: { id: validatedData.clienteId } },
+                montoTotal: totalFacturado,
+              saldoPendiente: saldoPendiente,
+              estadoPago: estadoPago,
+              fechaCreacion: new Date(),
+              abonos: {
+                create: abonosData
+              }
+            }
+          }
         },
       });
 
       // B. Kárdex Serverless: Descuento teórico de insumos según calibración de la máquina
       const configMaquina = await tx.configBebidaMaquina.findMany({
-        where: { maquinaId: validatedData.maquinaId },
+        where: { empresaId: currentUser.empresaId,
+            maquinaId: validatedData.maquinaId },
       });
       const configMap = new Map(configMaquina.map((c) => [c.bebida, c]));
 
-      const insumosList = await tx.insumo.findMany();
+      const insumosList = await tx.insumo.findMany({ where: { empresaId: currentUser.empresaId } });
       const insumosMap = new Map(insumosList.map((i) => [i.codigo, i.id]));
       const idCafe = insumosMap.get("INS-CAFE-SOLUBLE");
       const idLeche = insumosMap.get("INS-LECHE-POLVO");
@@ -321,108 +424,129 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         }
       }
 
+      const descontarInsumo = async (insumoId: string, cantidad: number, referencia: string) => {
+        if (cantidad <= 0) return;
+
+        // 1. Descontar global (retrocompatibilidad)
+        const insumoActual = await tx.insumo.findUnique({ where: { id: insumoId } });
+        if (insumoActual && Number(insumoActual.stockActual) < cantidad) {
+          console.warn(`[Liquidación] Stock insuficiente para insumo ${insumoId}. Stock: ${insumoActual.stockActual}, Requerido: ${cantidad}`);
+        }
+        await tx.insumo.update({
+          where: { empresaId: currentUser.empresaId,
+            id: insumoId },
+          data: { stockActual: { decrement: cantidad } },
+        });
+
+        // 2. Descontar FIFO de Bodega Máquina
+        const bodegaMaquina = await tx.bodega.findFirst({
+          where: { empresaId: currentUser.empresaId,
+            maquinaId: validatedData.maquinaId, tipo: "MAQUINA" },
+        });
+
+        if (bodegaMaquina) {
+          const existencias = await tx.existencia.findMany({
+            where: { empresaId: currentUser.empresaId,
+                bodegaId: bodegaMaquina.id, insumoId },
+            include: { lote: true },
+            orderBy: { lote: { fechaVencimiento: "asc" } },
+          });
+
+          let cantidadRestante = cantidad;
+
+          if (existencias.length === 0) {
+            await tx.movimientoInventario.create({
+              data: {
+                  empresaId: currentUser.empresaId,
+                insumoId,
+                tipo: "SALIDA_TEORICA_LIQUIDACION",
+                cantidad,
+                referencia,
+                bodegaOrigenId: bodegaMaquina.id,
+              },
+            });
+          } else {
+            for (let i = 0; i < existencias.length; i++) {
+              const ex = existencias[i];
+              const cantDisponible = Number(ex.cantidad);
+              const esUltima = i === existencias.length - 1;
+
+              if (cantidadRestante <= 0) break;
+
+              if (cantDisponible > 0 || esUltima) {
+                const cantDescontarLote = (cantDisponible >= cantidadRestante || esUltima) 
+                  ? cantidadRestante 
+                  : cantDisponible;
+                
+                if (cantDescontarLote > 0) {
+                  await tx.existencia.update({
+                    where: { empresaId: currentUser.empresaId,
+                        id: ex.id },
+                    data: { cantidad: { decrement: cantDescontarLote } },
+                  });
+
+                  await tx.movimientoInventario.create({
+                    data: {
+                        empresaId: currentUser.empresaId,
+                        insumoId,
+                      tipo: "SALIDA_TEORICA_LIQUIDACION",
+                      cantidad: cantDescontarLote,
+                      referencia,
+                      bodegaOrigenId: bodegaMaquina.id,
+                      loteId: ex.loteId,
+                    },
+                  });
+
+                  cantidadRestante -= cantDescontarLote;
+                }
+              }
+            }
+          }
+        } else {
+          // Fallback sin bodega
+          await tx.movimientoInventario.create({
+            data: {
+                empresaId: currentUser.empresaId,
+                insumoId,
+              tipo: "SALIDA_TEORICA_LIQUIDACION",
+              cantidad,
+              referencia,
+            },
+          });
+        }
+      };
+
       // 1. Descontar Premezclas configuradas directamente
       for (const [insumoId, gramosTotales] of Array.from(descuentosPorInsumo.entries())) {
         const insumoTarget = insumosList.find((i) => i.id === insumoId);
         if (!insumoTarget || gramosTotales <= 0) continue;
 
         const cantDescontar = insumoTarget.unidadMedida === "KG" ? gramosTotales / 1000 : gramosTotales;
-
-        await tx.insumo.update({
-          where: { id: insumoId },
-          data: { stockActual: { decrement: cantDescontar } },
-        });
-
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: cantDescontar,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial} (${insumoTarget.nombre})`,
-          },
-        });
+        await descontarInsumo(insumoId, cantDescontar, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial} (${insumoTarget.nombre})`);
       }
 
       // 2. Descontar Café fallback (si hubo ranuras sin premezcla explícita)
       if (idCafe && totalGramosCafe > 0) {
-        const cantKg = totalGramosCafe / 1000;
-        await tx.insumo.update({
-          where: { id: idCafe },
-          data: { stockActual: { decrement: cantKg } },
-        });
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId: idCafe,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: cantKg,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
-          },
-        });
+        await descontarInsumo(idCafe, totalGramosCafe / 1000, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`);
       }
 
       // Descontar Leche fallback
       if (idLeche && totalGramosLeche > 0) {
-        const cantKg = totalGramosLeche / 1000;
-        await tx.insumo.update({
-          where: { id: idLeche },
-          data: { stockActual: { decrement: cantKg } },
-        });
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId: idLeche,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: cantKg,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
-          },
-        });
+        await descontarInsumo(idLeche, totalGramosLeche / 1000, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`);
       }
 
       // Descontar Cocoa fallback
       if (idCocoa && totalGramosCocoa > 0) {
-        const cantKg = totalGramosCocoa / 1000;
-        await tx.insumo.update({
-          where: { id: idCocoa },
-          data: { stockActual: { decrement: cantKg } },
-        });
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId: idCocoa,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: cantKg,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
-          },
-        });
+        await descontarInsumo(idCocoa, totalGramosCocoa / 1000, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`);
       }
 
       // Descontar Vasos y Mezcladores
       if (idVasos && totalTazasNetas > 0) {
-        await tx.insumo.update({
-          where: { id: idVasos },
-          data: { stockActual: { decrement: totalTazasNetas } },
-        });
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId: idVasos,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: totalTazasNetas,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
-          },
-        });
+        await descontarInsumo(idVasos, totalTazasNetas, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`);
       }
 
       if (idMezcl && totalTazasNetas > 0) {
-        await tx.insumo.update({
-          where: { id: idMezcl },
-          data: { stockActual: { decrement: totalTazasNetas } },
-        });
-        await tx.movimientoInventario.create({
-          data: {
-            insumoId: idMezcl,
-            tipo: "SALIDA_TEORICA_LIQUIDACION",
-            cantidad: totalTazasNetas,
-            referencia: `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`,
-          },
-        });
+        await descontarInsumo(idMezcl, totalTazasNetas, `Liquidación #${liq.consecutivo} - ${maquinaData.codigoSerial}`);
       }
 
       // C. Actualizar contador actual de la máquina con el valor más reciente
@@ -431,15 +555,17 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         (maquinaData as any).contadorActual ?? 0
       );
       await tx.maquina.update({
-        where: { id: validatedData.maquinaId },
+        where: { empresaId: currentUser.empresaId,
+            id: validatedData.maquinaId },
         data: { contadorActual: maxContadorRegistrado },
       });
 
-      return liq;
+      return { liq, totalTazasNetas, totalFacturado, lineasCalculadas };
     });
 
-    const consecutivoGenerado = nuevaLiquidacion.consecutivo;
-    const liquidacionId = nuevaLiquidacion.id;
+    const consecutivoGenerado = txResult.liq.consecutivo;
+    const liquidacionId = txResult.liq.id;
+    const { totalTazasNetas, totalFacturado, lineasCalculadas } = txResult;
 
     // 6. Generación de PDF
     const pdfData = {
@@ -458,7 +584,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
         ubicacion: maquinaData.ubicacion,
       },
       operadorNombre: operadorNombre,
-      metodoPago: validatedData.metodoPago,
+      metodoPago: (validatedData.montoTransferencia || 0) > 0 && (validatedData.montoEfectivo || 0) > 0 ? "MIXTO" : (validatedData.montoTransferencia || 0) > 0 ? "TRANSFERENCIA" : "EFECTIVO",
       detalles: lineasCalculadas.map((l) => ({
         bebida: l.bebida,
         nombreBebida: BEBIDAS_CATALOGO.find((b) => b.id === l.bebida)?.nombre || l.bebida,
@@ -508,7 +634,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       const pdfElement = React.createElement(LiquidacionReceiptPdf, { data: pdfData }) as any;
       const pdfBuffer = await renderToBuffer(pdfElement);
       const uploadedUrl = await uploadPdfReceipt(pdfBuffer, consecutivoGenerado);
-      if (uploadedUrl && !uploadedUrl.includes("demo.public.blob")) {
+      if (uploadedUrl && uploadedUrl !== 'upload-failed' && !uploadedUrl.includes("demo.public.blob")) {
         reciboPdfUrl = uploadedUrl;
       }
     } catch (pdfError) {
@@ -517,7 +643,8 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
 
     // Actualizar Liquidación con la URL del PDF generado
     await prisma.liquidacion.update({
-      where: { id: liquidacionId },
+      where: { empresaId: currentUser.empresaId,
+        id: liquidacionId },
       data: { reciboPdfUrl },
     }).catch(() => null);
 
@@ -530,7 +657,7 @@ export async function registrarLiquidacion(formData: LiquidacionFormData) {
       maquinaModelo: maquinaData.modelo,
       totalFacturado: totalFacturado,
       totalTazasNetas: totalTazasNetas,
-      metodoPago: validatedData.metodoPago,
+      metodoPago: (validatedData.montoTransferencia || 0) > 0 && (validatedData.montoEfectivo || 0) > 0 ? "MIXTO" : (validatedData.montoTransferencia || 0) > 0 ? "TRANSFERENCIA" : "EFECTIVO",
       pdfUrl: reciboPdfUrl,
     });
 

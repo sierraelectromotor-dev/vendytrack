@@ -4,8 +4,18 @@ import prisma from "@/lib/prisma";
 import { requireAdmin, verifyPassword } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
+const SYSTEM_RESET_ENABLED = process.env.ENABLE_SYSTEM_RESET === 'true';
+
 export async function reiniciarSistemaTotal(formData: FormData) {
+  if (!SYSTEM_RESET_ENABLED) {
+    return {
+      success: false,
+      error: 'El reinicio del sistema está deshabilitado. Configure ENABLE_SYSTEM_RESET=true para habilitarlo.',
+    };
+  }
+
   const currentUser = await requireAdmin();
+  const user = currentUser;
 
   const fraseConfirmacion = formData.get("fraseConfirmacion")?.toString()?.trim() || "";
   const password = formData.get("password")?.toString() || "";
@@ -47,56 +57,108 @@ export async function reiniciarSistemaTotal(formData: FormData) {
   try {
     // Ejecutar transacción de reseteo total en orden de dependencias referenciales
     await prisma.$transaction(async (tx) => {
-      // 1. Borrar detalles y liquidaciones
-      await tx.detalleLiquidacion.deleteMany({});
-      await tx.movimientoInventario.deleteMany({});
-      await tx.visitaExtraordinaria.deleteMany({});
-      await tx.liquidacion.deleteMany({});
+      // 1. Nivel de Hojas (Detalles y movimientos)
+      await tx.abono.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.detalleDespacho.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.detalleProduccion.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.detalleLiquidacion.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.movimientoInventario.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.existencia.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.ingredienteFormula.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
 
-      // 2. Borrar transacciones contables y gastos fijos
-      await tx.transaccionContable.deleteMany({});
-      await tx.gastoFijo.deleteMany({});
+      // 2. Transacciones y documentos intermedios
+      await tx.transaccionContable.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.ordenDespacho.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.produccion.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.cuentaCobrar.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.liquidacion.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.visitaExtraordinaria.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.conciliacionTurno.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
 
-      // 3. Borrar configuraciones de máquinas y precios
-      await tx.configBebidaMaquina.deleteMany({});
-      await tx.precioMaquina.deleteMany({});
-      await tx.maquina.deleteMany({});
+      // 3. Configuraciones, fórmulas, lotes y gastos
+      await tx.lote.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.formula.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.recetaInsumo.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.configBebidaMaquina.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.precioMaquina.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.gastoFijo.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
 
-      // 4. Borrar recetas e insumos
-      await tx.recetaInsumo.deleteMany({});
-      await tx.insumo.deleteMany({});
-
-      // 5. Borrar rutas
-      await tx.ruta.deleteMany({});
-
-      // 6. Borrar clientes
-      await tx.cliente.deleteMany({});
-
-      // 7. Borrar usuarios operativos (manteniendo todos los usuarios con rol ADMIN)
-      await tx.user.deleteMany({
+      // 4. Entidades Base (deben borrarse en orden)
+      await tx.maquina.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.bodega.deleteMany({
         where: {
-          rol: {
-            not: "ADMIN",
-          },
-        },
+            empresaId: currentUser.empresaId,
+            id: { not: "bodega-principal" } }
+      });
+      await tx.insumo.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.ruta.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+      await tx.cliente.deleteMany({
+          where: { empresaId: currentUser.empresaId }
+    });
+
+      // 5. Usuarios operativos (manteniendo ADMIN)
+      await tx.user.deleteMany({
+        where: { rol: { not: "ADMIN" } },
       });
 
       // 8. Restaurar la Bodega Principal a los valores por defecto si existe
-      await tx.bodegaPrincipal.upsert({
+      await tx.bodega.upsert({
         where: { id: "bodega-principal" },
         update: {
           nombre: "Bodega Central VendyTrack",
-          direccion: "Calle 13 # 68-35, Bogotá, Colombia",
-          latitud: 4.64828,
-          longitud: -74.11667,
-          telefono: null,
+          tipo: "PRINCIPAL",
         },
         create: {
-          id: "bodega-principal",
+            empresaId: currentUser.empresaId,
+            id: "bodega-principal",
           nombre: "Bodega Central VendyTrack",
-          direccion: "Calle 13 # 68-35, Bogotá, Colombia",
-          latitud: 4.64828,
-          longitud: -74.11667,
+          tipo: "PRINCIPAL",
         },
       });
     });

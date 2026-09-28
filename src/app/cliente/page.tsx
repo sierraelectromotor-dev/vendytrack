@@ -1,6 +1,6 @@
 import React from "react";
 import prisma from "@/lib/prisma";
-import { formatCOP, formatFechaColombia } from "@/lib/utils";
+import { formatCOP, formatFechaColombia, formatFechaCorta } from "@/lib/utils";
 import { logoutAction } from "@/actions/auth";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -31,23 +31,33 @@ export default async function ClientePortalPage() {
         maquinas: true,
         liquidaciones: {
           orderBy: { fecha: "desc" },
-          include: { maquina: true },
+          include: { 
+            maquina: true,
+            detalles: { select: { tazasNetas: true } },
+          },
         },
       },
     }).catch(() => null);
   }
 
-  // Si no tiene clienteId directo o es admin revisando el portal
+  // Si no tiene clienteId vinculado, mostrar mensaje de error
   if (!cliente) {
-    cliente = await prisma.cliente.findFirst({
-      include: {
-        maquinas: true,
-        liquidaciones: {
-          orderBy: { fecha: "desc" },
-          include: { maquina: true },
-        },
-      },
-    }).catch(() => null);
+    return (
+      <div className="min-h-screen bg-stone-100 py-4 px-4 max-w-4xl mx-auto flex flex-col items-center justify-center space-y-4">
+        <div className="bg-white border border-stone-200 rounded-2xl p-8 shadow-sm text-center space-y-3 max-w-md">
+          <Building2 className="w-12 h-12 text-stone-300 mx-auto" />
+          <h1 className="text-lg font-bold text-stone-900">Cuenta no vinculada</h1>
+          <p className="text-sm text-stone-500">
+            Tu cuenta de usuario no está asociada a ningún cliente. Contacta al administrador para vincular tu cuenta.
+          </p>
+          <form action={logoutAction}>
+            <button type="submit" className="px-4 py-2 bg-stone-800 text-white rounded-xl text-sm font-semibold hover:bg-stone-900 transition-colors">
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   const razonSocial = cliente?.razonSocial || user.name;
@@ -56,7 +66,10 @@ export default async function ClientePortalPage() {
   const maquinas = cliente?.maquinas || [];
   const liquidaciones = cliente?.liquidaciones || [];
 
-  const totalTazasServidas = liquidaciones.reduce((acc, l) => acc + (l.totalFacturado ? Number(l.totalFacturado) : 0), 0);
+  const totalTazasServidas = liquidaciones.reduce(
+    (acc, l) => acc + l.detalles.reduce((sum: any, d: any) => sum + d.tazasNetas, 0),
+    0
+  );
   const totalFacturadoAcumulado = liquidaciones.reduce((acc, l) => acc + (l.totalFacturado ? Number(l.totalFacturado) : 0), 0);
 
   return (
@@ -112,9 +125,9 @@ export default async function ClientePortalPage() {
         </div>
 
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm space-y-1">
-          <span className="text-xs text-stone-400 font-semibold block">Total Consumo Acumulado</span>
+          <span className="text-xs text-stone-400 font-semibold block">Total Tazas Servidas</span>
           <span className="text-2xl font-black text-stone-900 dark:text-white">
-            {formatCOP(totalFacturadoAcumulado)}
+            {totalTazasServidas.toLocaleString('es-CO')}
           </span>
           <span className="text-[11px] text-stone-400 block">Liquidaciones al día</span>
         </div>
@@ -150,7 +163,7 @@ export default async function ClientePortalPage() {
                       Liquidación LIQ-{l.consecutivo}
                     </span>
                     <span className="text-stone-400 text-[11px]">
-                      • {formatFechaColombia(l.fecha)}
+                      &bull; {formatFechaCorta(l.fecha)}
                     </span>
                   </div>
                   <p className="text-stone-500 text-[11px]">
@@ -170,6 +183,7 @@ export default async function ClientePortalPage() {
                   href={`/api/liquidaciones/${l.id}/pdf`}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`Descargar recibo de liquidación LIQ-${l.consecutivo}`}
                   className="px-4 py-2.5 bg-coffee-800 hover:bg-coffee-900 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all self-start sm:self-auto shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" />

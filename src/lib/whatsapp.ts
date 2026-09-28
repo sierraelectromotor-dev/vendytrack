@@ -8,7 +8,7 @@ export interface WhatsAppMessagePayload {
   maquinaModelo: string;
   totalFacturado: number;
   totalTazasNetas: number;
-  metodoPago: "EFECTIVO" | "TRANSFERENCIA";
+  metodoPago: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | string;
   pdfUrl?: string | null;
   fecha?: Date | string;
 }
@@ -66,6 +66,51 @@ export function buildWhatsAppLink(
   }
 
   lines.push(`_¡Gracias por preferir nuestro servicio de café vending institucional!_`);
+
+  const message = lines.join("\n");
+  const encodedMessage = encodeURIComponent(message);
+
+  return `https://api.whatsapp.com/send?phone=${phone}&text=${encodedMessage}`;
+}
+
+export interface WhatsAppDespachoPayload {
+  consecutivo: number | string;
+  clienteNombre: string;
+  sede?: string;
+  maquinaSerial?: string;
+  tipoDespacho: string;
+  fecha?: Date | string;
+}
+
+export function buildWhatsAppDespachoLink(
+  telefono: string,
+  data: WhatsAppDespachoPayload
+): string {
+  const phone = normalizarTelefono(telefono);
+  const fechaStr = formatFechaColombia(data.fecha || new Date());
+  
+  const consecutivoFormatted = typeof data.consecutivo === "number" 
+    ? `DESP-${data.consecutivo.toString().padStart(4, "0")}`
+    : data.consecutivo;
+
+  const lines = [
+    `☕ *VendyTrack - Comprobante de Despacho*`,
+    `➖➖➖➖➖➖➖➖➖➖➖➖➖➖➖➖`,
+    `📄 *Nº Despacho:* ${consecutivoFormatted}`,
+    `📅 *Fecha:* ${fechaStr}`,
+    `🏢 *Cliente:* ${data.clienteNombre}${data.sede ? ` (${data.sede})` : ''}`,
+  ];
+
+  if (data.maquinaSerial) {
+    lines.push(`📠 *Máquina:* ${data.maquinaSerial}`);
+  }
+
+  lines.push(
+    `🔄 *Tipo:* ${data.tipoDespacho === 'VENTA_BOLSA' ? 'Venta Directa de Producto' : 'Abastecimiento de Insumos'}`,
+    `➖➖➖➖➖➖➖➖➖➖➖➖➖➖➖➖`,
+    `✅ _El despacho fue entregado exitosamente._`,
+    `_¡Gracias por confiar en nosotros!_`
+  );
 
   const message = lines.join("\n");
   const encodedMessage = encodeURIComponent(message);

@@ -56,7 +56,7 @@ export interface MaquinaRutaItem {
   ultimaLiquidacionFecha?: string | null;
   ultimoTotalFacturado?: number | null;
   ultimoConsecutivo?: number | null;
-  ultimoMetodoPago?: "EFECTIVO" | "TRANSFERENCIA" | null;
+  ultimoMetodoPago?: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | string | null;
   ultimoTotalTazas?: number | null;
   ultimoReciboPdfUrl?: string | null;
 }
@@ -134,7 +134,8 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
     defaultValues: {
       clienteId: "",
       maquinaId: initialMaquinaId,
-      metodoPago: "EFECTIVO",
+      montoEfectivo: 0,
+      montoTransferencia: 0,
       detalles: [],
       fotoContadorBase64: "",
       firmaClienteBase64: "",
@@ -149,7 +150,8 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
 
   // useWatch garantiza cálculos en tiempo real instantáneos al modificar cualquier campo
   const watchedDetalles = useWatch({ control, name: "detalles" });
-  const watchedMetodoPago = useWatch({ control, name: "metodoPago" });
+  const watchedMontoEfectivo = useWatch({ control, name: "montoEfectivo" }) || 0;
+  const watchedMontoTransferencia = useWatch({ control, name: "montoTransferencia" }) || 0;
 
   useEffect(() => {
     if (initialMaquinaId) setCurrentMaquinaId(initialMaquinaId);
@@ -214,6 +216,25 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
           ubicacion: res.data.maquina.ubicacion,
         });
 
+        if (rutaMaquinas.length === 0) {
+          setRutaMaquinas([{
+            id: res.data.maquina.id,
+            codigoSerial: res.data.maquina.codigoSerial,
+            modelo: res.data.maquina.modelo,
+            ubicacion: res.data.maquina.ubicacion || "",
+            clienteNombre: res.data.cliente.razonSocial,
+            rutaNombre: "Ruta Directa",
+            liquidadaHoy: (res.data.maquina as any).liquidadaHoy,
+            ultimoConsecutivo: (res.data.maquina as any).ultimoConsecutivo,
+            ultimaLiquidacionFecha: (res.data.maquina as any).ultimaLiquidacionFecha,
+            ultimoTotalFacturado: (res.data.maquina as any).ultimoTotalFacturado,
+            ultimoTotalTazas: (res.data.maquina as any).ultimoTotalTazas,
+            ultimoMetodoPago: (res.data.maquina as any).ultimoMetodoPago,
+            ultimoReciboPdfUrl: (res.data.maquina as any).ultimoReciboPdfUrl,
+            ultimaLiquidacionId: (res.data.maquina as any).ultimaLiquidacionId,
+          }]);
+        }
+
         const updatedDetalles = res.data.bebidas.map((b) => ({
           bebida: b.bebida as TipoBebidaEnum,
           contadorAnterior: b.contadorAnterior,
@@ -225,7 +246,8 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
         reset({
           clienteId: res.data.cliente.id,
           maquinaId: res.data.maquina.id,
-          metodoPago: "EFECTIVO",
+          montoEfectivo: 0,
+          montoTransferencia: 0,
           detalles: updatedDetalles,
           fotoContadorBase64: "",
           firmaClienteBase64: "",
@@ -343,7 +365,7 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
                 ultimoTotalFacturado: result.data.totalFacturado,
                 ultimoTotalTazas: result.data.totalTazasNetas,
                 ultimoReciboPdfUrl: result.data.pdfUrl || null,
-                ultimoMetodoPago: data.metodoPago,
+                ultimoMetodoPago: data.montoEfectivo > 0 && data.montoTransferencia > 0 ? "MIXTO" : data.montoTransferencia > 0 ? "TRANSFERENCIA" : "EFECTIVO",
                 ultimaLiquidacionFecha: new Date().toISOString(),
               }
             : m
@@ -631,6 +653,14 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
                   Ver / Descargar Recibo Oficial (PDF)
                 </a>
               )}
+
+              {/* Botón Volver a Mi Ruta */}
+              <a
+                href="/rutero"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl shadow-md transition-all text-xs"
+              >
+                Volver a Mis Tareas de Hoy
+              </a>
 
               {/* Si hay una orden extraordinaria activa asignada para esta máquina específica */}
               {visitasMaquinaActual.length > 0 && (
@@ -992,44 +1022,55 @@ export const MobileLiquidacionForm: React.FC<MobileLiquidacionFormProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-stone-700 dark:text-stone-200 uppercase tracking-wider flex items-center gap-1.5">
                 <Banknote className="w-3.5 h-3.5 text-coffee-600" />
-                Paso 2: Método de Pago *
+                Paso 2: Registro de Pagos
               </label>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <label
-                className={`flex items-center gap-2.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                  watchedMetodoPago === "EFECTIVO"
-                    ? "border-coffee-600 bg-coffee-50 dark:bg-coffee-950/40 text-coffee-900 dark:text-coffee-200 font-bold"
-                    : "border-stone-200 dark:border-stone-800 text-stone-600 hover:border-stone-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  value="EFECTIVO"
-                  {...register("metodoPago")}
-                  className="hidden"
-                />
-                <Banknote className="w-5 h-5 text-coffee-600" />
-                <span className="text-xs">Efectivo</span>
-              </label>
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-stone-600 dark:text-stone-300">
+                  Monto Efectivo
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 font-bold">$</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    {...register("montoEfectivo", { valueAsNumber: true })}
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 pl-7 text-sm font-bold text-stone-900 dark:text-white outline-none focus:border-coffee-500 focus:ring-1 focus:ring-coffee-500"
+                  />
+                </div>
+              </div>
 
-              <label
-                className={`flex items-center gap-2.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                  watchedMetodoPago === "TRANSFERENCIA"
-                    ? "border-coffee-600 bg-coffee-50 dark:bg-coffee-950/40 text-coffee-900 dark:text-coffee-200 font-bold"
-                    : "border-stone-200 dark:border-stone-800 text-stone-600 hover:border-stone-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  value="TRANSFERENCIA"
-                  {...register("metodoPago")}
-                  className="hidden"
-                />
-                <CreditCard className="w-5 h-5 text-coffee-600" />
-                <span className="text-xs">Transferencia</span>
-              </label>
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-stone-600 dark:text-stone-300">
+                  Monto Transferencia
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 font-bold">$</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    {...register("montoTransferencia", { valueAsNumber: true })}
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-700 rounded-xl p-2.5 pl-7 text-sm font-bold text-stone-900 dark:text-white outline-none focus:border-coffee-500 focus:ring-1 focus:ring-coffee-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-stone-100 dark:border-stone-800 flex justify-between items-center text-xs">
+              <span className="text-stone-500 font-semibold">Total Abonado:</span>
+              <span className="font-bold text-coffee-700 dark:text-amber-400">
+                {formatCOP((watchedMontoEfectivo || 0) + (watchedMontoTransferencia || 0))}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-stone-500 font-semibold">Saldo a Cartera:</span>
+              <span className="font-bold text-rose-600 dark:text-rose-400">
+                {formatCOP(Math.max(0, calculations.totalFacturado - ((watchedMontoEfectivo || 0) + (watchedMontoTransferencia || 0))))}
+              </span>
             </div>
           </div>
 

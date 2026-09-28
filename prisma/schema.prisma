@@ -9,6 +9,7 @@ generator client {
 }
 
 enum Rol {
+  SUPERADMIN
   ADMIN
   OPERADOR_RUTA
   CLIENTE
@@ -38,6 +39,9 @@ enum TipoMovimientoInventario {
   ENTRADA_COMPRA
   SALIDA_TEORICA_LIQUIDACION
   SALIDA_FISICA_REPOSICION
+  TRASLADO_A_MAQUINA
+  ENTRADA_PRODUCCION
+  SALIDA_PRODUCCION
 }
 
 enum UnidadMedida {
@@ -46,72 +50,154 @@ enum UnidadMedida {
   UNIDADES
 }
 
+enum TipoBodega {
+  PRINCIPAL
+  MAQUINA
+}
+
+enum EstadoDespacho {
+  CREADA
+  EN_RUTA
+  ENTREGADA
+  CANCELADA
+}
+
+enum TipoDespacho {
+  SURTIDO_MAQUINA
+  VENTA_BOLSA
+}
+
+enum EstadoPago {
+  PENDIENTE
+  PAGADO_PARCIAL
+  PAGADO_TOTAL
+}
+
+model Empresa {
+  id        String   @id @default(cuid())
+  nombre    String
+  nit       String?
+  logoUrl   String?
+  activa    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuarios               User[]
+  clientes               Cliente[]
+  rutas                  Ruta[]
+  maquinas               Maquina[]
+  configsBebida          ConfigBebidaMaquina[]
+  preciosMaquina         PrecioMaquina[]
+  liquidaciones          Liquidacion[]
+  detallesLiquidacion    DetalleLiquidacion[]
+  insumos                Insumo[]
+  recetaInsumos          RecetaInsumo[]
+  movimientosInventario  MovimientoInventario[]
+  bodegas                Bodega[]
+  lotes                  Lote[]
+  existencias            Existencia[]
+  transaccionesContables TransaccionContable[]
+  gastosFijos            GastoFijo[]
+  visitasExtraordinarias VisitaExtraordinaria[]
+  formulas               Formula[]
+  ingredientesFormula    IngredienteFormula[]
+  producciones           Produccion[]
+  detallesProduccion     DetalleProduccion[]
+  ordenesDespacho        OrdenDespacho[]
+  detallesDespacho       DetalleDespacho[]
+  cuentasCobrar          CuentaCobrar[]
+  abonos                 Abono[]
+  conciliaciones         ConciliacionTurno[]
+  cuentasBancarias       CuentaBancaria[]
+}
+
 model User {
-  id              String        @id @default(cuid())
-  name            String
-  email           String        @unique
-  passwordHash    String
-  rol             Rol           @default(OPERADOR_RUTA)
-  clienteId       String?
-  cliente         Cliente?      @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  liquidaciones   Liquidacion[] @relation("OperadorLiquidaciones")
-  rutasAsignadas  Ruta[]        @relation("OperadorRutas")
-  transacciones   TransaccionContable[]
-  visitasAsignadas VisitaExtraordinaria[] @relation("OperadorVisitasExtra")
-  visitasCreadas   VisitaExtraordinaria[] @relation("AdminVisitasExtra")
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                 String                 @id @default(cuid())
+  empresaId          String
+  empresa            Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  name               String
+  email              String                 @unique
+  passwordHash       String
+  rol                Rol                    @default(OPERADOR_RUTA)
+  clienteId          String?
+  cliente            Cliente?               @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  liquidaciones      Liquidacion[]          @relation("OperadorLiquidaciones")
+  rutasAsignadas     Ruta[]                 @relation("OperadorRutas")
+  transacciones      TransaccionContable[]
+  visitasAsignadas   VisitaExtraordinaria[] @relation("OperadorVisitasExtra")
+  visitasCreadas     VisitaExtraordinaria[] @relation("AdminVisitasExtra")
+  producciones       Produccion[]           @relation("UsuarioProduccion")
+  ordenesDespachadas OrdenDespacho[]        @relation("OperadorDespachos")
+  ordenesCreadas     OrdenDespacho[]        @relation("CreadorDespachos")
+  abonosRegistrados  Abono[]                @relation("AbonosRegistrados")
+  conciliaciones     ConciliacionTurno[]    @relation("OperadorConciliacion")
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  deletedAt          DateTime?
 
   @@index([clienteId])
+  @@index([empresaId])
 }
 
 model Cliente {
-  id            String        @id @default(cuid())
-  razonSocial   String
-  sede          String
-  direccion     String
-  contacto      String
-  whatsapp      String        // Formato internacional con indicativo e.g. +573001234567
-  activo        Boolean       @default(true)
-  maquinas      Maquina[]
-  liquidaciones Liquidacion[]
-  usuarios      User[]
-  visitasExtra  VisitaExtraordinaria[]
-  latitud       Float?
-  longitud      Float?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id              String                 @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  razonSocial     String
+  sede            String
+  direccion       String
+  contacto        String
+  whatsapp        String // Formato internacional con indicativo e.g. +573001234567
+  activo          Boolean                @default(true)
+  maquinas        Maquina[]
+  liquidaciones   Liquidacion[]
+  usuarios        User[]
+  visitasExtra    VisitaExtraordinaria[]
+  ordenesDespacho OrdenDespacho[]
+  cuentasCobrar   CuentaCobrar[]
+  latitud         Float?
+  longitud        Float?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  deletedAt       DateTime?
 
   @@index([razonSocial])
   @@index([whatsapp])
+  @@index([empresaId])
 }
 
 model Ruta {
-  id             String     @id @default(cuid())
-  nombre         String     // ej. "Ruta 1 - Clínicas y Hospitales Norte"
+  id             String    @id @default(cuid())
+  empresaId      String
+  empresa        Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  nombre         String // ej. "Ruta 1 - Clínicas y Hospitales Norte"
   descripcion    String?
-  diasFrecuencia String?    // ej. "LUN-MIE-VIE"
+  diasFrecuencia String? // ej. "LUN-MIE-VIE"
   operadorId     String?
-  operador       User?      @relation("OperadorRutas", fields: [operadorId], references: [id], onDelete: SetNull)
+  operador       User?     @relation("OperadorRutas", fields: [operadorId], references: [id], onDelete: SetNull)
   maquinas       Maquina[]
-  activa         Boolean    @default(true)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  activa         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([operadorId])
+  @@index([empresaId])
 }
 
 model Maquina {
   id              String                 @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   codigoSerial    String                 @unique
-  ubicacion       String                 // Ubicación física dentro del local (ej. Piso 2 Cafetería)
-  modelo          String                 // ej. Soluble 3/4 Tolvas Bianchi
+  ubicacion       String // Ubicación física dentro del local (ej. Piso 2 Cafetería)
+  modelo          String // ej. Soluble 3/4 Tolvas Bianchi
   numeroProductos Int                    @default(4) // Número de selecciones/productos de la máquina
   contadorActual  Int                    @default(0) // Contador actual / inicial de la máquina
   clienteId       String?
   cliente         Cliente?               @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   rutaId          String?
   ruta            Ruta?                  @relation(fields: [rutaId], references: [id], onDelete: SetNull)
+  ordenRuta       Int                    @default(0) // Orden de visita en la ruta
   activa          Boolean                @default(true)
   latitud         Float?
   longitud        Float?
@@ -119,38 +205,47 @@ model Maquina {
   configuraciones ConfigBebidaMaquina[]
   liquidaciones   Liquidacion[]
   visitasExtra    VisitaExtraordinaria[]
+  ordenesDespacho OrdenDespacho[]
+  bodega          Bodega?
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
+  deletedAt       DateTime?
 
   @@index([clienteId])
   @@index([rutaId])
   @@index([codigoSerial])
+  @@index([empresaId])
 }
 
 model ConfigBebidaMaquina {
-  id              String      @id @default(cuid())
+  id              String     @id @default(cuid())
+  empresaId       String
+  empresa         Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   maquinaId       String
-  maquina         Maquina     @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+  maquina         Maquina    @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
   bebida          TipoBebida
-  activa          Boolean     @default(true)
-  contadorInicial Int         @default(0) // Contador inicial de esta bebida en la máquina
+  activa          Boolean    @default(true)
+  contadorInicial Int        @default(0) // Contador inicial de esta bebida en la máquina
   insumoId        String?
-  insumo          Insumo?     @relation(fields: [insumoId], references: [id], onDelete: SetNull)
-  gramosPorTaza   Decimal?    @default(0) @db.Decimal(6, 2)  // Gramos de la premezcla/insumo por taza
-  gramosCafe      Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de café soluble por taza (retrocompatibilidad)
-  gramosLeche     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de leche en polvo por taza (retrocompatibilidad)
-  gramosCocoa     Decimal     @default(0) @db.Decimal(6, 2)  // Gramos de cocoa por taza (retrocompatibilidad)
-  precio          Decimal     @default(2500) @db.Decimal(10, 2)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  insumo          Insumo?    @relation(fields: [insumoId], references: [id], onDelete: SetNull)
+  gramosPorTaza   Decimal?   @default(0) @db.Decimal(6, 2) // Gramos de la premezcla/insumo por taza
+  gramosCafe      Decimal    @default(0) @db.Decimal(6, 2) // Gramos de café soluble por taza (retrocompatibilidad)
+  gramosLeche     Decimal    @default(0) @db.Decimal(6, 2) // Gramos de leche en polvo por taza (retrocompatibilidad)
+  gramosCocoa     Decimal    @default(0) @db.Decimal(6, 2) // Gramos de cocoa por taza (retrocompatibilidad)
+  precio          Decimal    @default(2500) @db.Decimal(10, 2)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@unique([maquinaId, bebida])
   @@index([maquinaId])
   @@index([insumoId])
+  @@index([empresaId])
 }
 
 model PrecioMaquina {
   id             String     @id @default(cuid())
+  empresaId      String
+  empresa        Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   maquinaId      String
   maquina        Maquina    @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
   bebida         TipoBebida
@@ -160,45 +255,55 @@ model PrecioMaquina {
 
   @@unique([maquinaId, bebida])
   @@index([maquinaId])
+  @@index([empresaId])
 }
 
 model Liquidacion {
-  id               String               @id @default(cuid())
-  consecutivo      Int                  @unique @default(autoincrement())
-  fecha            DateTime             @default(now())
-  clienteId        String
-  cliente          Cliente              @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  maquinaId        String
-  maquina          Maquina              @relation(fields: [maquinaId], references: [id], onDelete: Restrict)
-  operadorId       String
-  operador         User                 @relation("OperadorLiquidaciones", fields: [operadorId], references: [id], onDelete: Restrict)
-  metodoPago       MetodoPago           @default(EFECTIVO)
-  totalFacturado   Decimal              @db.Decimal(12, 2)
-  fotoContadorUrl  String               // Vercel Blob URL
-  firmaClienteUrl  String               // Vercel Blob URL (PNG)
-  reciboPdfUrl     String?              // Vercel Blob URL (PDF)
-  notas            String?
-  detalles         DetalleLiquidacion[]
-  movimientos      MovimientoInventario[]
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  id              String                 @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  consecutivo     Int                    @unique @default(autoincrement())
+  fecha           DateTime               @default(now())
+  clienteId       String
+  cliente         Cliente                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  maquinaId       String
+  maquina         Maquina                @relation(fields: [maquinaId], references: [id], onDelete: Restrict)
+  operadorId      String
+  operador        User                   @relation("OperadorLiquidaciones", fields: [operadorId], references: [id], onDelete: Restrict)
+  metodoPago      MetodoPago             @default(EFECTIVO)
+  totalFacturado  Decimal                @db.Decimal(12, 2)
+  fotoContadorUrl String // Vercel Blob URL
+  firmaClienteUrl String // Vercel Blob URL (PNG)
+  reciboPdfUrl    String? // Vercel Blob URL (PDF)
+  notas           String?
+  cuentaCobrarId  String?
+  cuentaCobrar    CuentaCobrar?          @relation(fields: [cuentaCobrarId], references: [id], onDelete: SetNull)
+  estadoPago      EstadoPago             @default(PENDIENTE)
+  detalles        DetalleLiquidacion[]
+  movimientos     MovimientoInventario[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@index([clienteId])
   @@index([maquinaId])
   @@index([fecha])
   @@index([consecutivo])
   @@index([operadorId])
+  @@index([maquinaId, fecha])
+  @@index([empresaId])
 }
 
 model DetalleLiquidacion {
   id               String      @id @default(cuid())
+  empresaId        String
+  empresa          Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   liquidacionId    String
   liquidacion      Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
   bebida           TipoBebida
-  contadorAnterior Int         // C.F (Contador Final previo)
-  contadorActual   Int         // C.A (Contador Actual de la visita)
+  contadorAnterior Int // C.F (Contador Final previo)
+  contadorActual   Int // C.A (Contador Actual de la visita)
   bebidasDanadas   Int         @default(0) // B.D (Purgas / tazas dañadas)
-  tazasNetas       Int         // (C.A - C.F) - B.D
+  tazasNetas       Int // (C.A - C.F) - B.D
   precioUnitario   Decimal     @db.Decimal(10, 2)
   subtotal         Decimal     @db.Decimal(12, 2) // tazasNetas * precioUnitario
   createdAt        DateTime    @default(now())
@@ -206,67 +311,128 @@ model DetalleLiquidacion {
   @@unique([liquidacionId, bebida])
   @@index([liquidacionId])
   @@index([bebida])
+  @@index([empresaId])
 }
 
 model Insumo {
-  id            String                 @id @default(cuid())
-  nombre        String                 // Café soluble (kg), Leche en polvo (kg), etc.
-  codigo        String                 @unique
-  unidadMedida  UnidadMedida           @default(KG)
-  stockActual   Decimal                @default(0) @db.Decimal(10, 3)
-  stockMinimo   Decimal                @default(0) @db.Decimal(10, 3)
-  costoPromedio Decimal                @default(0) @db.Decimal(10, 2)
-  recetas         RecetaInsumo[]
-  movimientos     MovimientoInventario[]
-  configuraciones ConfigBebidaMaquina[]
-  createdAt       DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id                     String                 @id @default(cuid())
+  empresaId              String
+  empresa                Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  nombre                 String // Café soluble (kg), Leche en polvo (kg), etc.
+  codigo                 String                 @unique
+  unidadMedida           UnidadMedida           @default(KG)
+  stockActual            Decimal                @default(0) @db.Decimal(10, 3)
+  stockMinimo            Decimal                @default(0) @db.Decimal(10, 3)
+  costoPromedio          Decimal                @default(0) @db.Decimal(10, 2)
+  precioVenta            Decimal?               @db.Decimal(10, 2)
+  recetas                RecetaInsumo[]
+  movimientos            MovimientoInventario[]
+  configuraciones        ConfigBebidaMaquina[]
+  lotes                  Lote[]
+  existencias            Existencia[]
+  detallesDespacho       DetalleDespacho[]
+  formulasComoResultante Formula[]              @relation("FormulaResultante")
+  ingredientesEnFormulas IngredienteFormula[]   @relation("IngredienteInsumo")
+  detallesProduccion     DetalleProduccion[]    @relation("DetalleProduccionInsumo")
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
 
   @@index([codigo])
+  @@index([empresaId])
 }
 
 model RecetaInsumo {
-  id                 String       @id @default(cuid())
-  bebida             TipoBebida
-  insumoId           String
-  insumo             Insumo       @relation(fields: [insumoId], references: [id], onDelete: Cascade)
-  cantidadPorTaza    Decimal      @db.Decimal(8, 4) // Ej: 0.002 kg para tinto, 0.015 kg para leche
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id              String     @id @default(cuid())
+  empresaId       String
+  empresa         Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  bebida          TipoBebida
+  insumoId        String
+  insumo          Insumo     @relation(fields: [insumoId], references: [id], onDelete: Cascade)
+  cantidadPorTaza Decimal    @db.Decimal(8, 4) // Ej: 0.002 kg para tinto, 0.015 kg para leche
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@unique([bebida, insumoId])
   @@index([bebida])
   @@index([insumoId])
+  @@index([empresaId])
 }
 
 model MovimientoInventario {
-  id            String                   @id @default(cuid())
-  insumoId      String
-  insumo        Insumo                   @relation(fields: [insumoId], references: [id], onDelete: Restrict)
-  tipo          TipoMovimientoInventario
-  cantidad      Decimal                  @db.Decimal(10, 3)
-  costoUnitario Decimal?                 @db.Decimal(10, 2)
-  referencia    String?                  // Consecutivo Liquidación (ej. LIQ-0012) o Factura Proveedor
-  liquidacionId String?
-  liquidacion   Liquidacion?             @relation(fields: [liquidacionId], references: [id], onDelete: SetNull)
-  operadorId    String?
-  fecha         DateTime                 @default(now())
-  createdAt     DateTime                 @default(now())
+  id              String                   @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  insumoId        String
+  insumo          Insumo                   @relation(fields: [insumoId], references: [id], onDelete: Restrict)
+  tipo            TipoMovimientoInventario
+  cantidad        Decimal                  @db.Decimal(10, 3)
+  costoUnitario   Decimal?                 @db.Decimal(10, 2)
+  referencia      String? // Consecutivo Liquidación (ej. LIQ-0012) o Factura Proveedor
+  liquidacionId   String?
+  liquidacion     Liquidacion?             @relation(fields: [liquidacionId], references: [id], onDelete: SetNull)
+  operadorId      String?
+  loteId          String?
+  lote            Lote?                    @relation(fields: [loteId], references: [id])
+  bodegaOrigenId  String?
+  bodegaDestinoId String?
+  fecha           DateTime                 @default(now())
+  createdAt       DateTime                 @default(now())
 
   @@index([insumoId])
   @@index([liquidacionId])
   @@index([fecha])
   @@index([tipo])
+  @@index([insumoId, fecha])
+  @@index([empresaId])
 }
 
-model BodegaPrincipal {
-  id        String   @id @default("bodega-principal")
-  nombre    String   @default("Bodega Central VendyTrack")
-  direccion String   @default("Calle 13 # 68-35, Bogotá, Colombia")
-  latitud   Float    @default(4.64828)
-  longitud  Float    @default(-74.11667)
-  telefono  String?
-  updatedAt DateTime @updatedAt
+model Bodega {
+  id          String       @id @default(cuid())
+  empresaId   String
+  empresa     Empresa      @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  nombre      String
+  tipo        TipoBodega
+  maquinaId   String?      @unique
+  maquina     Maquina?     @relation(fields: [maquinaId], references: [id])
+  existencias Existencia[]
+  createdAt   DateTime     @default(now())
+
+  @@index([empresaId])
+}
+
+model Lote {
+  id                      String                 @id @default(cuid())
+  empresaId               String
+  empresa                 Empresa                @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  numeroLote              String
+  fechaVencimiento        DateTime
+  insumoId                String
+  insumo                  Insumo                 @relation(fields: [insumoId], references: [id])
+  createdAt               DateTime               @default(now())
+  existencias             Existencia[]
+  movimientos             MovimientoInventario[]
+  detallesDespacho        DetalleDespacho[]
+  produccionesResultantes Produccion[]           @relation("LoteResultante")
+  detallesProduccion      DetalleProduccion[]    @relation("LoteIngrediente")
+
+  @@unique([numeroLote, insumoId])
+  @@index([empresaId])
+}
+
+model Existencia {
+  id        String  @id @default(cuid())
+  empresaId String
+  empresa   Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  bodegaId  String
+  bodega    Bodega  @relation(fields: [bodegaId], references: [id])
+  loteId    String
+  lote      Lote    @relation(fields: [loteId], references: [id])
+  insumoId  String
+  insumo    Insumo  @relation(fields: [insumoId], references: [id])
+  cantidad  Float   @default(0)
+
+  @@unique([bodegaId, loteId, insumoId])
+  @@index([empresaId])
 }
 
 enum TipoTransaccion {
@@ -290,13 +456,15 @@ enum CategoriaTransaccion {
 
 model TransaccionContable {
   id             String               @id @default(cuid())
+  empresaId      String
+  empresa        Empresa              @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   tipo           TipoTransaccion
   categoria      CategoriaTransaccion
   monto          Decimal              @db.Decimal(12, 2)
   fecha          DateTime             @default(now())
   descripcion    String
-  referencia     String?              // Factura, comprobante, recibo #
-  comprobanteUrl String?              // Soporte / foto
+  referencia     String? // Factura, comprobante, recibo #
+  comprobanteUrl String? // Soporte / foto
   metodoPago     MetodoPago           @default(EFECTIVO)
   esFijo         Boolean              @default(false)
   creadoPorId    String?
@@ -308,11 +476,14 @@ model TransaccionContable {
   @@index([categoria])
   @@index([fecha])
   @@index([esFijo])
+  @@index([empresaId])
 }
 
 model GastoFijo {
   id          String               @id @default(cuid())
-  concepto    String               // ej. "Arriendo Bodega Central", "Nómina Base"
+  empresaId   String
+  empresa     Empresa              @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  concepto    String // ej. "Arriendo Bodega Central", "Nómina Base"
   categoria   CategoriaTransaccion @default(SERVICIOS_ARRIENDO)
   monto       Decimal              @db.Decimal(12, 2)
   diaCobro    Int?                 @default(1)
@@ -322,6 +493,7 @@ model GastoFijo {
   updatedAt   DateTime             @updatedAt
 
   @@index([activo])
+  @@index([empresaId])
 }
 
 enum TipoVisitaExtra {
@@ -337,40 +509,222 @@ enum EstadoVisitaExtra {
   CANCELADA
 }
 
+enum PrioridadVisita {
+  NORMAL
+  ALTA
+  URGENTE
+}
+
 model VisitaExtraordinaria {
-  id                 String            @id @default(cuid())
-  consecutivo        Int               @unique @default(autoincrement())
-  tipo               TipoVisitaExtra
-  estado             EstadoVisitaExtra @default(PENDIENTE)
-  prioridad          String            @default("ALTA") // NORMAL, ALTA, URGENTE
-  maquinaId          String
-  maquina            Maquina           @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
-  clienteId          String
-  cliente            Cliente           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  operadorId         String
-  operador           User              @relation("OperadorVisitasExtra", fields: [operadorId], references: [id], onDelete: Restrict)
-  creadoPorId        String?
-  creadoPor          User?             @relation("AdminVisitasExtra", fields: [creadoPorId], references: [id], onDelete: SetNull)
+  id          String            @id @default(cuid())
+  empresaId   String
+  empresa     Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  consecutivo Int               @unique @default(autoincrement())
+  tipo        TipoVisitaExtra
+  estado      EstadoVisitaExtra @default(PENDIENTE)
+  prioridad   PrioridadVisita   @default(ALTA)
+  maquinaId   String
+  maquina     Maquina           @relation(fields: [maquinaId], references: [id], onDelete: Cascade)
+  clienteId   String
+  cliente     Cliente           @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  operadorId  String
+  operador    User              @relation("OperadorVisitasExtra", fields: [operadorId], references: [id], onDelete: Restrict)
+  creadoPorId String?
+  creadoPor   User?             @relation("AdminVisitasExtra", fields: [creadoPorId], references: [id], onDelete: SetNull)
 
-  motivoReporte      String            // Lo que reportó el cliente
-  notasAdmin         String?
+  motivoReporte String // Lo que reportó el cliente
+  notasAdmin    String?
 
-  solucionAplicada   String?           // Lo que hizo el técnico
-  fotoEvidenciaUrl   String?
-  fechaCompletada    DateTime?
+  solucionAplicada String? // Lo que hizo el técnico
+  fotoEvidenciaUrl String?
+  fechaCompletada  DateTime?
 
-  detallesReposicion Json?             // Si entregó insumos: [{ insumoId, cantidad, nombre, unidadMedida }]
-  liquidacionId      String?           // Si generó una segunda liquidación
+  detallesReposicion Json? // Si entregó insumos: [{ insumoId, cantidad, nombre, unidadMedida }]
+  liquidacionId      String? // Si generó una segunda liquidación
 
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([maquinaId])
   @@index([clienteId])
   @@index([operadorId])
   @@index([estado])
   @@index([createdAt])
+  @@index([empresaId])
 }
 
+model Formula {
+  id                 String               @id @default(cuid())
+  empresaId          String
+  empresa            Empresa              @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  nombre             String
+  insumoResultanteId String
+  insumoResultante   Insumo               @relation("FormulaResultante", fields: [insumoResultanteId], references: [id])
+  ingredientes       IngredienteFormula[]
+  producciones       Produccion[]
+  createdAt          DateTime             @default(now())
 
+  @@index([empresaId])
+}
+
+model IngredienteFormula {
+  id                  String  @id @default(cuid())
+  empresaId           String
+  empresa             Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  formulaId           String
+  formula             Formula @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  insumoIngredienteId String
+  insumo              Insumo  @relation("IngredienteInsumo", fields: [insumoIngredienteId], references: [id])
+  cantidadRequerida   Decimal @db.Decimal(10, 4)
+
+  @@index([empresaId])
+}
+
+model Produccion {
+  id                String              @id @default(cuid())
+  empresaId         String
+  empresa           Empresa             @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  formulaId         String
+  formula           Formula             @relation(fields: [formulaId], references: [id])
+  loteResultanteId  String
+  loteResultante    Lote                @relation("LoteResultante", fields: [loteResultanteId], references: [id])
+  cantidadProducida Decimal             @db.Decimal(10, 3)
+  fecha             DateTime            @default(now())
+  usuarioId         String
+  usuario           User                @relation("UsuarioProduccion", fields: [usuarioId], references: [id])
+  detalles          DetalleProduccion[]
+
+  @@index([empresaId])
+}
+
+model DetalleProduccion {
+  id            String     @id @default(cuid())
+  empresaId     String
+  empresa       Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  produccionId  String
+  produccion    Produccion @relation(fields: [produccionId], references: [id], onDelete: Cascade)
+  insumoId      String
+  insumo        Insumo     @relation("DetalleProduccionInsumo", fields: [insumoId], references: [id])
+  loteId        String
+  lote          Lote       @relation("LoteIngrediente", fields: [loteId], references: [id])
+  cantidadUsada Decimal    @db.Decimal(10, 3)
+
+  @@index([empresaId])
+}
+
+model OrdenDespacho {
+  id              String            @id @default(cuid())
+  empresaId       String
+  empresa         Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  consecutivo     Int               @unique @default(autoincrement())
+  maquinaId       String
+  clienteId       String
+  operadorId      String
+  estado          EstadoDespacho    @default(CREADA)
+  tipo            TipoDespacho
+  firmaClienteUrl String?
+  fechaCreacion   DateTime          @default(now())
+  fechaEntrega    DateTime?
+  creadoPorId     String
+  detalles        DetalleDespacho[]
+  cuentaCobrarId  String?
+  cuentaCobrar    CuentaCobrar?     @relation(fields: [cuentaCobrarId], references: [id], onDelete: SetNull)
+  estadoPago      EstadoPago        @default(PENDIENTE)
+  totalFacturado  Float             @default(0)
+  // relations
+  maquina         Maquina           @relation(fields: [maquinaId], references: [id])
+  cliente         Cliente           @relation(fields: [clienteId], references: [id])
+  operador        User              @relation("OperadorDespachos", fields: [operadorId], references: [id])
+  creadoPor       User              @relation("CreadorDespachos", fields: [creadoPorId], references: [id])
+
+  @@index([empresaId])
+}
+
+model DetalleDespacho {
+  id        String        @id @default(cuid())
+  empresaId String
+  empresa   Empresa       @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  ordenId   String
+  insumoId  String
+  loteId    String
+  cantidad  Float
+  orden     OrdenDespacho @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+  insumo    Insumo        @relation(fields: [insumoId], references: [id])
+  lote      Lote          @relation(fields: [loteId], references: [id])
+
+  @@index([empresaId])
+}
+
+model CuentaCobrar {
+  id               String          @id @default(cuid())
+  empresaId        String
+  empresa          Empresa         @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  consecutivo      Int             @unique @default(autoincrement())
+  clienteId        String
+  cliente          Cliente         @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  montoTotal       Decimal         @db.Decimal(12, 2)
+  saldoPendiente   Decimal         @db.Decimal(12, 2)
+  estadoPago       EstadoPago      @default(PENDIENTE)
+  fechaCreacion    DateTime        @default(now())
+  fechaVencimiento DateTime?
+  abonos           Abono[]
+  liquidaciones    Liquidacion[]
+  ordenesDespacho  OrdenDespacho[]
+
+  @@index([clienteId])
+  @@index([estadoPago])
+  @@index([empresaId])
+}
+
+model Abono {
+  id              String       @id @default(cuid())
+  empresaId       String
+  empresa         Empresa      @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cuentaCobrarId  String
+  cuentaCobrar    CuentaCobrar @relation(fields: [cuentaCobrarId], references: [id], onDelete: Cascade)
+  monto           Decimal      @db.Decimal(12, 2)
+  metodoPago      MetodoPago
+  comprobanteUrl  String?
+  registradoPorId String
+  registradoPor   User         @relation("AbonosRegistrados", fields: [registradoPorId], references: [id], onDelete: Restrict)
+  fecha           DateTime     @default(now())
+
+  @@index([cuentaCobrarId])
+  @@index([registradoPorId])
+  @@index([empresaId])
+}
+
+model ConciliacionTurno {
+  id                  String   @id @default(cuid())
+  empresaId           String
+  empresa             Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  consecutivo         Int      @unique @default(autoincrement())
+  operadorId          String
+  fecha               DateTime @default(now())
+  totalEfectivo       Float
+  totalTransferencias Float
+  observaciones       String?
+  firmaAdminUrl       String
+  operador            User     @relation("OperadorConciliacion", fields: [operadorId], references: [id])
+
+  @@index([empresaId])
+}
+
+model CuentaBancaria {
+  id           String   @id @default(cuid())
+  empresaId    String
+  banco        String
+  tipoCuenta   String   @default("AHORROS") // AHORROS, CORRIENTE
+  numeroCuenta String
+  titular      String
+  nitTitular   String?
+  activa       Boolean  @default(true)
+  esPrincipal  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([empresaId])
+}
 

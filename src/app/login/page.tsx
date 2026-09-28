@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { loginAction } from "@/actions/auth";
 import {
@@ -19,7 +19,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full py-3 px-4 bg-coffee-800 hover:bg-coffee-900 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-lg shadow-coffee-950/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+      className="w-full py-3 px-4 bg-coffee-800 hover:bg-coffee-900  text-white font-bold text-sm rounded-xl shadow-lg shadow-coffee-950/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
     >
       {pending ? (
         <>
@@ -38,8 +38,6 @@ function SubmitButton() {
 
 export default function LoginPage() {
   const [state, formAction] = useFormState(loginAction, null);
-  const [emailInput, setEmailInput] = useState("");
-  const [passwordInput, setPasswordInput] = useState("");
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center px-4 py-8 bg-stone-100 dark:bg-stone-950">
@@ -60,7 +58,7 @@ export default function LoginPage() {
         {/* Tarjeta de Formulario */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-6 shadow-mobile space-y-5">
           {state?.error && (
-            <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl p-3 flex items-center gap-2 text-xs text-rose-800 dark:text-rose-200 animate-in fade-in">
+            <div id="login-error" className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl p-3 flex items-center gap-2 text-xs text-rose-800 dark:text-rose-200 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
               <span>{state.error}</span>
             </div>
@@ -69,34 +67,38 @@ export default function LoginPage() {
           <form action={formAction} className="space-y-4">
             {/* Campo Email */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+              <label htmlFor="email" className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-coffee-600" />
                 Correo Electrónico
               </label>
               <input
+                id="email"
                 type="email"
                 name="email"
                 required
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
+                autoComplete="email"
                 placeholder="ej. admin@vendytrack.com"
+                aria-invalid={!!state?.error}
+                aria-describedby={state?.error ? "login-error" : undefined}
                 className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3.5 py-2.5 text-xs text-stone-900 dark:text-white outline-none focus:border-coffee-600 focus:ring-1 focus:ring-coffee-600 transition-all"
               />
             </div>
 
             {/* Campo Contraseña */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+              <label htmlFor="password" className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-coffee-600" />
                 Contraseña
               </label>
               <input
+                id="password"
                 type="password"
                 name="password"
                 required
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
+                autoComplete="current-password"
                 placeholder="••••••••"
+                aria-invalid={!!state?.error}
+                aria-describedby={state?.error ? "login-error" : undefined}
                 className="w-full bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl px-3.5 py-2.5 text-xs text-stone-900 dark:text-white outline-none focus:border-coffee-600 focus:ring-1 focus:ring-coffee-600 transition-all"
               />
             </div>
@@ -113,3 +115,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
