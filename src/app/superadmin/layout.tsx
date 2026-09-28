@@ -7,6 +7,8 @@ import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 
+export const dynamic = "force-dynamic";
+
 export default async function SuperadminLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser();
   

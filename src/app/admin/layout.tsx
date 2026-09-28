@@ -19,6 +19,8 @@ import {
 
 import { BotonReinicioSistema } from "@/components/admin/BotonReinicioSistema";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminLayout({
   children,
 }: {
