@@ -101,7 +101,7 @@ export default async function AdminLayout({
             <span>Vista Móvil (Rutero)</span>
           </Link>
 
-          <BotonReinicioSistema />
+          {currentUser?.rol === "SUPERADMIN" && <BotonReinicioSistema />}
 
           <form action={logoutAction}>
             <button

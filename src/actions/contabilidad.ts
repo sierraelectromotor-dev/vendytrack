@@ -4,10 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { TipoTransaccion, CategoriaTransaccion, MetodoPago } from "@prisma/client";
+import { eliminarTraslado } from "./traslados";
 
 export interface TransaccionUnificada {
   id: string;
-  tipo: "INGRESO" | "GASTO";
+  tipo: "INGRESO" | "GASTO" | "TRASLADO";
   categoria: string;
   categoriaLabel: string;
   monto: number;
@@ -17,8 +18,12 @@ export interface TransaccionUnificada {
   metodoPago: string;
   esFijo?: boolean;
   esLiquidacion: boolean;
+  esTraslado?: boolean;
   reciboPdfUrl?: string | null;
   creadoPorNombre?: string | null;
+  origenDesc?: string;
+  destinoDesc?: string;
+  trasladoIdReal?: string;
 }
 
 export interface GastoFijoItem {
@@ -85,6 +90,9 @@ const LABELS_CATEGORIAS: Record<string, string> = {
   SERVICIOS_ARRIENDO: "Servicios Públicos y Arriendos",
   PUBLICIDAD_MARKETING: "Publicidad y Mercadeo",
   OTRO_GASTO: "Otros Gastos Operativos",
+
+  // Traslados internos
+  TRASLADO_FONDOS: "Traslado de Fondos (Bancos / Efectivo)",
 };
 
 export async function obtenerResumenContable(filtros?: {
@@ -142,7 +150,24 @@ export async function obtenerResumenContable(filtros?: {
         orderBy: { createdAt: "desc" },
     });
 
-    // 4. Unificar transacciones
+    // 4. Obtener traslados de fondos del período
+    const trasladosDb = await prisma.trasladoFondos.findMany({
+      where: {
+        empresaId: currentUser.empresaId,
+        fecha: {
+          gte: fechaInicio,
+          lte: fechaFin,
+        },
+      },
+      include: {
+        cuentaOrigen: true,
+        cuentaDestino: true,
+        creadoPor: { select: { name: true } },
+      },
+      orderBy: { fecha: "desc" },
+    });
+
+    // 5. Unificar transacciones
     const transaccionesUnificadas: TransaccionUnificada[] = [];
 
     // Mapear liquidaciones a transacciones tipo INGRESO
@@ -179,6 +204,51 @@ export async function obtenerResumenContable(filtros?: {
         esFijo: t.esFijo,
         esLiquidacion: false,
         creadoPorNombre: t.creadoPor?.name || "Administrador",
+      });
+    });
+
+    // Mapear traslados de fondos internos
+    trasladosDb.forEach((t) => {
+      const origenDesc =
+        t.origenTipo === "EFECTIVO"
+          ? "Caja General (Efectivo)"
+          : t.cuentaOrigen
+          ? `${t.cuentaOrigen.banco} (${t.cuentaOrigen.numeroCuenta})`
+          : "Cuenta Bancaria";
+      const destinoDesc =
+        t.destinoTipo === "EFECTIVO"
+          ? "Caja General (Efectivo)"
+          : t.cuentaDestino
+          ? `${t.cuentaDestino.banco} (${t.cuentaDestino.numeroCuenta})`
+          : "Cuenta Bancaria";
+
+      let catLabel = "Traslado Interno";
+      if (t.origenTipo === "EFECTIVO" && t.destinoTipo === "BANCO") {
+        catLabel = `Consignación: Efectivo ➔ ${t.cuentaDestino?.banco || "Banco"}`;
+      } else if (t.origenTipo === "BANCO" && t.destinoTipo === "EFECTIVO") {
+        catLabel = `Retiro: ${t.cuentaOrigen?.banco || "Banco"} ➔ Efectivo`;
+      } else {
+        catLabel = `Transferencia: ${t.cuentaOrigen?.banco || "Banco"} ➔ ${t.cuentaDestino?.banco || "Banco"}`;
+      }
+
+      transaccionesUnificadas.push({
+        id: `traslado-${t.id}`,
+        tipo: "TRASLADO",
+        categoria: "TRASLADO_FONDOS",
+        categoriaLabel: catLabel,
+        monto: Number(t.monto),
+        fecha: t.fecha.toISOString(),
+        descripcion: t.concepto || `${origenDesc} ➔ ${destinoDesc}`,
+        referencia: t.referencia || null,
+        metodoPago: `${t.origenTipo} ➔ ${t.destinoTipo}`,
+        esFijo: false,
+        esLiquidacion: false,
+        esTraslado: true,
+        reciboPdfUrl: t.comprobanteUrl || null,
+        creadoPorNombre: t.creadoPor?.name || "Administrador",
+        origenDesc,
+        destinoDesc,
+        trasladoIdReal: t.id,
       });
     });
 
@@ -410,6 +480,11 @@ export async function eliminarTransaccion(id: string) {
         success: false,
         error: "Las liquidaciones automáticas no se pueden eliminar desde contabilidad para proteger la integridad operativa.",
       };
+    }
+
+    if (id.startsWith("traslado-")) {
+      const trasladoId = id.replace("traslado-", "");
+      return await eliminarTraslado(trasladoId);
     }
 
     await prisma.transaccionContable.delete({

@@ -109,6 +109,7 @@ model Empresa {
   abonos                 Abono[]
   conciliaciones         ConciliacionTurno[]
   cuentasBancarias       CuentaBancaria[]
+  trasladosFondos        TrasladoFondos[]
 }
 
 model User {
@@ -131,6 +132,7 @@ model User {
   ordenesCreadas     OrdenDespacho[]        @relation("CreadorDespachos")
   abonosRegistrados  Abono[]                @relation("AbonosRegistrados")
   conciliaciones     ConciliacionTurno[]    @relation("OperadorConciliacion")
+  trasladosRealizados TrasladoFondos[]      @relation("UsuarioTraslados")
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   deletedAt          DateTime?
@@ -715,20 +717,59 @@ model ConciliacionTurno {
 }
 
 model CuentaBancaria {
-  id           String   @id @default(cuid())
-  empresaId    String
-  banco        String
-  tipoCuenta   String   @default("AHORROS") // AHORROS, CORRIENTE
-  numeroCuenta String
-  titular      String
-  nitTitular   String?
-  activa       Boolean  @default(true)
-  esPrincipal  Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String           @id @default(cuid())
+  empresaId        String
+  banco            String
+  tipoCuenta       String           @default("AHORROS") // AHORROS, CORRIENTE
+  numeroCuenta     String
+  titular          String
+  nitTitular       String?
+  saldoActual      Decimal          @default(0) @db.Decimal(12, 2)
+  activa           Boolean          @default(true)
+  esPrincipal      Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
-  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresa          Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  trasladosOrigen  TrasladoFondos[] @relation("TrasladosOrigen")
+  trasladosDestino TrasladoFondos[] @relation("TrasladosDestino")
 
   @@index([empresaId])
 }
+
+enum TipoOrigenDestino {
+  EFECTIVO
+  BANCO
+}
+
+model TrasladoFondos {
+  id              String            @id @default(cuid())
+  empresaId       String
+  empresa         Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  origenTipo      TipoOrigenDestino
+  cuentaOrigenId  String?
+  cuentaOrigen    CuentaBancaria?   @relation("TrasladosOrigen", fields: [cuentaOrigenId], references: [id], onDelete: SetNull)
+
+  destinoTipo     TipoOrigenDestino
+  cuentaDestinoId String?
+  cuentaDestino   CuentaBancaria?   @relation("TrasladosDestino", fields: [cuentaDestinoId], references: [id], onDelete: SetNull)
+
+  monto           Decimal           @db.Decimal(12, 2)
+  fecha           DateTime          @default(now())
+  concepto        String            // Ej: "Consignación recaudo en efectivo", "Retiro para caja menor", "Transferencia entre cuentas"
+  referencia      String?           // Comprobante / # aprobación / recibo
+  comprobanteUrl  String?           // Soporte adjunto
+  creadoPorId     String?
+  creadoPor       User?             @relation("UsuarioTraslados", fields: [creadoPorId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([empresaId])
+  @@index([fecha])
+  @@index([origenTipo])
+  @@index([destinoTipo])
+}
+
 

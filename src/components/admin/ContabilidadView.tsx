@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Settings,
   Scale,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   ResumenContable,
@@ -28,6 +29,7 @@ import {
   obtenerResumenContable,
 } from "@/actions/contabilidad";
 import { RegistrarTransaccionModal } from "./RegistrarTransaccionModal";
+import { RegistrarTrasladoModal } from "./RegistrarTrasladoModal";
 import { GastosFijosModal } from "./GastosFijosModal";
 import { CuentasBancariasModal } from "./CuentasBancariasModal";
 import { PuntoEquilibrioCard } from "./PuntoEquilibrioCard";
@@ -62,12 +64,13 @@ export default function ContabilidadView({
   const [mes, setMes] = useState(mesInicial);
   const [anio, setAnio] = useState(anioInicial);
 
-  const [filtroTipo, setFiltroTipo] = useState<"TODOS" | "INGRESO" | "GASTO">("TODOS");
+  const [filtroTipo, setFiltroTipo] = useState<"TODOS" | "INGRESO" | "GASTO" | "TRASLADO">("TODOS");
   const [busqueda, setBusqueda] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [tipoModal, setTipoModal] = useState<"GASTO" | "INGRESO">("GASTO");
   const [modalGastosFijosAbierto, setModalGastosFijosAbierto] = useState(false);
   const [modalCuentasBancariasAbierto, setModalCuentasBancariasAbierto] = useState(false);
+  const [modalTrasladoAbierto, setModalTrasladoAbierto] = useState(false);
 
   const [isPending, startTransition] = useTransition();
 
@@ -210,6 +213,17 @@ export default function ContabilidadView({
           >
             <TrendingUp className="w-3.5 h-3.5 shrink-0" />
             <span>+ Ingreso<span className="hidden md:inline"> Extra</span></span>
+          </button>
+
+          {/* Botón Traslado de Fondos */}
+          <button
+            type="button"
+            onClick={() => setModalTrasladoAbierto(true)}
+            className="px-2.5 sm:px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1 sm:gap-1.5 shrink-0 whitespace-nowrap text-[11px] sm:text-xs"
+            title="Registrar traslado entre cuentas bancarias o efectivo"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+            <span>+ <span className="hidden md:inline">Registrar </span>Traslado</span>
           </button>
         </div>
       </div>
@@ -486,6 +500,17 @@ export default function ContabilidadView({
               >
                 Gastos
               </button>
+              <button
+                type="button"
+                onClick={() => setFiltroTipo("TRASLADO")}
+                className={`px-2.5 py-1 rounded-lg transition-colors ${
+                  filtroTipo === "TRASLADO"
+                    ? "bg-blue-600 text-white"
+                    : "text-stone-500 hover:text-stone-900"
+                }`}
+              >
+                Traslados
+              </button>
             </div>
           </div>
         </div>
@@ -524,9 +549,14 @@ export default function ContabilidadView({
                         <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200/60 dark:border-emerald-900/60">
                           + Ingreso
                         </span>
-                      ) : (
+                      ) : t.tipo === "GASTO" ? (
                         <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold border border-rose-200/60 dark:border-rose-900/60">
                           - Gasto
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-bold border border-blue-200/60 dark:border-blue-900/60 flex items-center gap-1 w-fit">
+                          <ArrowLeftRight className="w-3 h-3 shrink-0" />
+                          Traslado
                         </span>
                       )}
                     </td>
@@ -548,10 +578,12 @@ export default function ContabilidadView({
                       className={`p-3 whitespace-nowrap text-right font-bold ${
                         t.tipo === "INGRESO"
                           ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400"
+                          : t.tipo === "GASTO"
+                          ? "text-rose-600 dark:text-rose-400"
+                          : "text-blue-600 dark:text-blue-400"
                       }`}
                     >
-                      {t.tipo === "INGRESO" ? "+" : "-"}
+                      {t.tipo === "INGRESO" ? "+" : t.tipo === "GASTO" ? "-" : "↔ "}
                       {formatearDinero(t.monto)}
                     </td>
                     <td className="p-3 whitespace-nowrap text-center">
@@ -630,6 +662,22 @@ export default function ContabilidadView({
       {modalCuentasBancariasAbierto && (
         <CuentasBancariasModal
           onClose={() => setModalCuentasBancariasAbierto(false)}
+        />
+      )}
+
+      {/* Modal de Traslados de Fondos */}
+      {modalTrasladoAbierto && (
+        <RegistrarTrasladoModal
+          onClose={() => setModalTrasladoAbierto(false)}
+          onSuccess={() => {
+            setModalTrasladoAbierto(false);
+            startTransition(async () => {
+              const res = await obtenerResumenContable({ mes, anio });
+              if (res.success && res.data) {
+                setData(res.data);
+              }
+            });
+          }}
         />
       )}
     </div>

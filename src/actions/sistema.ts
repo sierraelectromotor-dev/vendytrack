@@ -15,6 +15,12 @@ export async function reiniciarSistemaTotal(formData: FormData) {
   }
 
   const currentUser = await requireAdmin();
+  if (currentUser.rol !== "SUPERADMIN") {
+    return {
+      success: false,
+      error: "Acceso denegado: Únicamente el Super Administrador puede ejecutar el reinicio total del sistema.",
+    };
+  }
   const user = currentUser;
 
   const fraseConfirmacion = formData.get("fraseConfirmacion")?.toString()?.trim() || "";
