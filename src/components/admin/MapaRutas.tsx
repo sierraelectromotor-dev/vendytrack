@@ -298,11 +298,13 @@ export default function MapaRutas({ bodega, rutas }: MapaRutasProps) {
     });
 
     // Ajustar el zoom para ver todos los puntos
-    if (bounds.length > 0) {
+    if (bounds.length > 1) {
       mapInstanceRef.current.fitBounds(bounds, {
         padding: [50, 50],
         maxZoom: 14,
       });
+    } else if (bounds.length === 1) {
+      mapInstanceRef.current.setView(bounds[0], 14);
     }
   };
 
@@ -435,8 +437,10 @@ export default function MapaRutas({ bodega, rutas }: MapaRutasProps) {
         <ConfigurarBodegaModal
           bodega={bodegaActual}
           onClose={() => setModalBodegaAbierto(false)}
-          onSaved={() => {
-            // Se refresca el estado local
+          onSaved={(nuevaBodega) => {
+            if (nuevaBodega) {
+              setBodegaActual(nuevaBodega);
+            }
           }}
         />
       )}

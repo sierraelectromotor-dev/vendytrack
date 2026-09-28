@@ -1,11 +1,22 @@
 "use client";
 
 import React, { useState, useTransition } from "react";
-import { X, Building2, MapPin, Search, Phone, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { guardarBodegaPrincipal } from "@/actions/admin";
+import {
+  X,
+  Building2,
+  MapPin,
+  Search,
+  Navigation,
+  Phone,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
+import { guardarBodegaPrincipal, geocodificarDireccion } from "@/actions/admin";
 
 interface ConfigurarBodegaModalProps {
   bodega: {
+    id?: string;
     nombre: string;
     direccion: string;
     latitud: number;
@@ -13,7 +24,7 @@ interface ConfigurarBodegaModalProps {
     telefono?: string | null;
   };
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (nuevaBodega?: any) => void;
 }
 
 export const ConfigurarBodegaModal: React.FC<ConfigurarBodegaModalProps> = ({
@@ -29,9 +40,10 @@ export const ConfigurarBodegaModal: React.FC<ConfigurarBodegaModalProps> = ({
   const [latitud, setLatitud] = useState<number>(bodega.latitud || 4.64828);
   const [longitud, setLongitud] = useState<number>(bodega.longitud || -74.11667);
   const [buscandoGeo, setBuscandoGeo] = useState(false);
+  const [obteniendoGPS, setObteniendoGPS] = useState(false);
   const [geoMensaje, setGeoMensaje] = useState<string | null>(null);
 
-  // Geocodificación asistida con OpenStreetMap Nominatim
+  // 1. Geocodificación asistida en servidor
   const buscarCoordenadas = async () => {
     if (!direccion.trim()) {
       setGeoMensaje("Ingresa primero una dirección.");
@@ -42,24 +54,60 @@ export const ConfigurarBodegaModal: React.FC<ConfigurarBodegaModalProps> = ({
     setGeoMensaje(null);
 
     try {
-      const query = encodeURIComponent(`${direccion}, Colombia`);
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
-      const data = await res.json();
-
-      if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        setLatitud(lat);
-        setLongitud(lon);
-        setGeoMensaje(`✓ Ubicación encontrada: ${data[0].display_name.slice(0, 60)}...`);
+      const res = await geocodificarDireccion(direccion);
+      if (res.success && res.data) {
+        setLatitud(res.data.latitud);
+        setLongitud(res.data.longitud);
+        setGeoMensaje(`✓ Dirección encontrada: ${res.data.displayName.slice(0, 65)}...`);
       } else {
-        setGeoMensaje("No se encontraron coordenadas automáticas. Puedes ingresarlas manualmente.");
+        setGeoMensaje(res.error || "No se encontraron coordenadas automáticas.");
       }
     } catch (e) {
       setGeoMensaje("Error al consultar el servicio de geocodificación.");
     } finally {
       setBuscandoGeo(false);
     }
+  };
+
+  // 2. Ubicación GPS directa del dispositivo del usuario
+  const usarUbicacionGPS = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGeoMensaje("Tu navegador o dispositivo no soporta geolocalización GPS.");
+      return;
+    }
+
+    setObteniendoGPS(true);
+    setGeoMensaje(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setLatitud(lat);
+        setLongitud(lng);
+        setGeoMensaje(
+          `✓ GPS capturado con precisión de ~${Math.round(pos.coords.accuracy)}m (${lat.toFixed(5)}, ${lng.toFixed(5)})`
+        );
+        setObteniendoGPS(false);
+      },
+      (err) => {
+        setObteniendoGPS(false);
+        if (err.code === 1) {
+          setGeoMensaje("⚠️ Permiso denegado. Permite el acceso a la ubicación en tu navegador.");
+        } else if (err.code === 2) {
+          setGeoMensaje("⚠️ Señal GPS no disponible.");
+        } else if (err.code === 3) {
+          setGeoMensaje("⚠️ Tiempo de espera agotado al consultar GPS.");
+        } else {
+          setGeoMensaje(`⚠️ Error al consultar GPS: ${err.message}`);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -75,7 +123,7 @@ export const ConfigurarBodegaModal: React.FC<ConfigurarBodegaModalProps> = ({
       const res = await guardarBodegaPrincipal(formData);
       if (res.success) {
         setSuccess(true);
-        if (onSaved) onSaved();
+        if (onSaved) onSaved(res.data);
         setTimeout(() => {
           onClose();
         }, 600);
@@ -158,22 +206,53 @@ export const ConfigurarBodegaModal: React.FC<ConfigurarBodegaModalProps> = ({
               <button
                 type="button"
                 onClick={buscarCoordenadas}
-                disabled={buscandoGeo}
+                disabled={buscandoGeo || obteniendoGPS}
                 className="px-3 py-2 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 border border-stone-200 dark:border-stone-700 rounded-xl text-stone-700 dark:text-stone-300 font-semibold flex items-center gap-1.5 transition-colors shrink-0"
-                title="Obtener coordenadas desde la dirección"
+                title="Buscar coordenadas en mapa según la dirección"
               >
                 {buscandoGeo ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Search className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 )}
-                <span>Buscar GPS</span>
+                <span>Buscar Dirección</span>
               </button>
             </div>
-            {geoMensaje && (
-              <p className="text-[11px] text-stone-500 mt-1 italic">{geoMensaje}</p>
-            )}
           </div>
+
+          {/* Botón de Ubicación GPS del Dispositivo */}
+          <div className="p-3 bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Navigation className="w-4 h-4 text-blue-500 shrink-0" />
+              <div>
+                <p className="font-semibold text-stone-800 dark:text-stone-200">
+                  ¿Estás en la bodega ahora?
+                </p>
+                <p className="text-[10px] text-stone-500">
+                  Captura las coordenadas precisas del GPS de tu dispositivo
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={usarUbicacionGPS}
+              disabled={obteniendoGPS || buscandoGeo}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shrink-0 active:scale-95 shadow-sm text-[11px]"
+            >
+              {obteniendoGPS ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Navigation className="w-3.5 h-3.5 fill-current" />
+              )}
+              <span>{obteniendoGPS ? "Detectando..." : "Usar mi GPS"}</span>
+            </button>
+          </div>
+
+          {geoMensaje && (
+            <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-[11px] text-amber-800 dark:text-amber-300">
+              {geoMensaje}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

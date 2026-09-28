@@ -392,6 +392,10 @@ model Bodega {
   empresa     Empresa      @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   nombre      String
   tipo        TipoBodega
+  direccion   String?
+  latitud     Float?
+  longitud    Float?
+  telefono    String?
   maquinaId   String?      @unique
   maquina     Maquina?     @relation(fields: [maquinaId], references: [id])
   existencias Existencia[]

@@ -1547,28 +1547,175 @@ export async function asignarMaquinaARuta(maquinaId: string, rutaId: string) {
   }
 }
 
-export async function obtenerBodegaPrincipal() { try { const bodega = { id: "bodega-principal", nombre: "Bodega Central VendyTrack", direccion: "Calle 13 # 68-35, Bogotï¿½, Colombia", latitud: 4.64828, longitud: -74.11667, telefono: null }; return { success: true, data: bodega }; } catch (error: any) {
+export async function obtenerBodegaPrincipal() {
+  const currentUser = await requireAdmin();
+
+  try {
+    let bodega = await prisma.bodega.findFirst({
+      where: {
+        empresaId: currentUser.empresaId,
+        tipo: "PRINCIPAL",
+      },
+    });
+
+    if (!bodega) {
+      bodega = await prisma.bodega.create({
+        data: {
+          empresaId: currentUser.empresaId,
+          nombre: "Bodega Principal VendyTrack",
+          tipo: "PRINCIPAL",
+          direccion: "Calle 13 # 68-35, Bogotá, Colombia",
+          latitud: 4.64828,
+          longitud: -74.11667,
+          telefono: null,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        id: bodega.id,
+        nombre: bodega.nombre,
+        direccion: bodega.direccion || "Calle 13 # 68-35, Bogotá, Colombia",
+        latitud: bodega.latitud ?? 4.64828,
+        longitud: bodega.longitud ?? -74.11667,
+        telefono: bodega.telefono,
+      },
+    };
+  } catch (error: any) {
     console.error("[obtenerBodegaPrincipal] Error:", error);
     return {
       success: true,
       data: {
         id: "bodega-principal",
-        nombre: "Bodega Central VendyTrack",
-        direccion: "Calle 13 # 68-35, BogotÃ¡, Colombia",
+        nombre: "Bodega Principal VendyTrack",
+        direccion: "Calle 13 # 68-35, Bogotá, Colombia",
         latitud: 4.64828,
         longitud: -74.11667,
-        telefono: "+573001234567",
+        telefono: null,
       },
     };
   }
 }
 
-export async function guardarBodegaPrincipal(formData: FormData) { try { const bodega = { id: "bodega-principal" }; return { success: true, data: bodega }; } catch (error: any) {
+export async function guardarBodegaPrincipal(formData: FormData) {
+  const currentUser = await requireAdmin();
+
+  try {
+    const nombre = (formData.get("nombre") as string)?.trim() || "Bodega Central";
+    const direccion = (formData.get("direccion") as string)?.trim() || "";
+    const latitudRaw = formData.get("latitud") as string;
+    const longitudRaw = formData.get("longitud") as string;
+    const telefono = (formData.get("telefono") as string)?.trim() || null;
+
+    const latitud = latitudRaw ? parseFloat(latitudRaw) : 4.64828;
+    const longitud = longitudRaw ? parseFloat(longitudRaw) : -74.11667;
+
+    const existente = await prisma.bodega.findFirst({
+      where: {
+        empresaId: currentUser.empresaId,
+        tipo: "PRINCIPAL",
+      },
+    });
+
+    let bodega;
+    if (existente) {
+      bodega = await prisma.bodega.update({
+        where: { id: existente.id },
+        data: {
+          nombre,
+          direccion,
+          latitud,
+          longitud,
+          telefono,
+        },
+      });
+    } else {
+      bodega = await prisma.bodega.create({
+        data: {
+          empresaId: currentUser.empresaId,
+          nombre,
+          tipo: "PRINCIPAL",
+          direccion,
+          latitud,
+          longitud,
+          telefono,
+        },
+      });
+    }
+
+    revalidatePath("/admin/rutas");
+    revalidatePath("/admin/inventario");
+
+    return {
+      success: true,
+      data: {
+        id: bodega.id,
+        nombre: bodega.nombre,
+        direccion: bodega.direccion,
+        latitud: bodega.latitud,
+        longitud: bodega.longitud,
+        telefono: bodega.telefono,
+      },
+    };
+  } catch (error: any) {
     console.error("[guardarBodegaPrincipal] Error:", error);
     return { success: false, error: error.message || "Error al guardar bodega" };
   }
 }
 
+export async function geocodificarDireccion(direccion: string) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return { success: false, error: "No autorizado" };
+  }
+
+  if (!direccion || !direccion.trim()) {
+    return { success: false, error: "Ingresa una dirección válida" };
+  }
+
+  try {
+    const query = encodeURIComponent(direccion.trim() + ", Colombia");
+    const res = await fetch(
+      "https://nominatim.openstreetmap.org/search?format=json&q=" + query + "&limit=1",
+      {
+        headers: {
+          "User-Agent": "VendyTrack-ERP/1.0 (contacto@vendytrack.com)",
+          "Accept-Language": "es",
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!res.ok) {
+      return { success: false, error: "Servicio de mapas no disponible (" + res.status + ")" };
+    }
+
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return {
+        success: true,
+        data: {
+          latitud: parseFloat(data[0].lat),
+          longitud: parseFloat(data[0].lon),
+          displayName: data[0].display_name,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      error: "No se encontraron coordenadas para esta dirección en Colombia. Puedes ingresarlas manualmente o usar el botón GPS.",
+    };
+  } catch (error) {
+    console.error("[geocodificarDireccion] Error:", error);
+    return {
+      success: false,
+      error: "Error al consultar coordenadas. Verifica tu conexión o ingresa las coordenadas manualmente.",
+    };
+  }
+}
 
 // ==========================================
 // 6. DASHBOARD Y GESTIÃ“N DE RECAUDOS
