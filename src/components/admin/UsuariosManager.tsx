@@ -297,12 +297,14 @@ export const UsuariosManager: React.FC<UsuariosManagerProps> = ({
                       </span>
                       <span
                         className={`px-1.5 py-0.5 rounded-md text-[9px] font-semibold uppercase tracking-wider ${
-                          isAdmin
+                          u.rol === "SUPERADMIN"
+                            ? "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300"
+                            : isAdmin
                             ? "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300"
                             : "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400"
                         }`}
                       >
-                        {isAdmin ? "Admin" : "Rutero"}
+                        {u.rol === "SUPERADMIN" ? "Super Admin" : isAdmin ? "Admin" : "Rutero"}
                       </span>
                     </div>
                   </div>
@@ -354,17 +356,19 @@ export const UsuariosManager: React.FC<UsuariosManagerProps> = ({
                         <span>Editar</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setUserToDelete(u);
-                        }}
-                        className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
-                        title="Eliminar Usuario"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {u.rol !== "SUPERADMIN" && u.id !== currentUserId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setUserToDelete(u);
+                          }}
+                          className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
+                          title="Eliminar Usuario"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

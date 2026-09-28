@@ -470,7 +470,15 @@ export async function obtenerUsuarios() {
   const currentUser = await requireAdmin();
 
   try {
+    const whereClause: any = {
+      empresaId: currentUser.empresaId,
+    };
+    if (currentUser.rol !== "SUPERADMIN") {
+      whereClause.rol = { not: "SUPERADMIN" };
+    }
+
     const usuarios = await prisma.user.findMany({
+      where: whereClause,
       include: {
         rutasAsignadas: true,
         liquidaciones: { select: { id: true } },
@@ -505,7 +513,10 @@ export async function obtenerRuteros() {
 
   try {
     const ruteros = await prisma.user.findMany({
-      where: { rol: "OPERADOR_RUTA" },
+      where: {
+        empresaId: currentUser.empresaId,
+        rol: "OPERADOR_RUTA",
+      },
       include: {
         rutasAsignadas: true,
       },
@@ -581,12 +592,26 @@ export async function actualizarUsuario(
   try {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
-      return { success: false, error: "No autorizado: Inicia sesiÃ³n." };
+      return { success: false, error: "No autorizado: Inicia sesión." };
     }
 
-    // Solo un administrador o el propio usuario pueden editar este perfil
-    if (currentUser.rol !== "ADMIN" && currentUser.id !== id) {
+    // Solo un administrador, superadmin o el propio usuario pueden editar este perfil
+    if (currentUser.rol !== "ADMIN" && currentUser.rol !== "SUPERADMIN" && currentUser.id !== id) {
       return { success: false, error: "No tienes permisos para modificar este usuario." };
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return { success: false, error: "Usuario no encontrado" };
+    }
+
+    if (currentUser.rol !== "SUPERADMIN") {
+      if (targetUser.rol === "SUPERADMIN") {
+        return { success: false, error: "No tienes permisos para modificar al Super Administrador." };
+      }
+      if (targetUser.empresaId !== currentUser.empresaId) {
+        return { success: false, error: "No tienes permisos para modificar usuarios de otra empresa." };
+      }
     }
 
     if (!getDatabaseUrl()) {
@@ -658,18 +683,46 @@ export async function eliminarUsuario(id: string) {
       return { success: false, error: "Usuario no encontrado" };
     }
 
-    // Proteger si es el Ãºltimo administrador
+    // NUNCA permitir eliminar la cuenta de Super Administrador
+    if (user.rol === "SUPERADMIN") {
+      return {
+        success: false,
+        error: "Acceso denegado: No se puede eliminar la cuenta de Super Administrador.",
+      };
+    }
+
+    // Proteger aislamiento por empresa: No puede eliminar usuarios de otra empresa
+    if (currentUser.rol !== "SUPERADMIN" && user.empresaId !== currentUser.empresaId) {
+      return {
+        success: false,
+        error: "No tienes permiso para eliminar usuarios pertenecientes a otra empresa.",
+      };
+    }
+
+    // No permitir eliminarse a sí mismo
+    if (user.id === currentUser.id) {
+      return {
+        success: false,
+        error: "No puedes eliminar tu propio usuario mientras mantienes la sesión activa.",
+      };
+    }
+
+    // Proteger si es el único administrador de esta empresa
     if (user.rol === "ADMIN") {
-      const totalAdmins = await prisma.user.count({ where: { rol: "ADMIN" } });
+      const totalAdmins = await prisma.user.count({
+        where: {
+          empresaId: user.empresaId,
+          rol: "ADMIN",
+        },
+      });
       if (totalAdmins <= 1) {
         return {
           success: false,
-          error: "No puedes eliminar el Ãºnico administrador del sistema.",
+          error: "No puedes eliminar el único administrador de la empresa.",
         };
       }
     }
 
-    // Verificar si tiene liquidaciones histÃ³ricas asociadas
     if (user.liquidaciones.length > 0) {
       return {
         success: false,

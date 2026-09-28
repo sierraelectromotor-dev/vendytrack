@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -9,11 +9,12 @@ export const dynamic = "force-dynamic";
 
 export default async function CarteraPage() {
   const user = await getCurrentUser();
-  if (!user || user.rol !== "ADMIN") {
+  if (!user || (user.rol !== "ADMIN" && user.rol !== "SUPERADMIN")) {
     redirect("/login");
   }
 
   const cuentasCobrar = await prisma.cuentaCobrar.findMany({
+    where: user.rol === "SUPERADMIN" ? {} : { empresaId: user.empresaId },
     include: {
       cliente: true,
       abonos: {

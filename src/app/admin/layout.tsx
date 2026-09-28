@@ -37,6 +37,9 @@ export default async function AdminLayout({
     .toUpperCase();
 
   const navItems = [
+    ...(currentUser?.rol === "SUPERADMIN"
+      ? [{ href: "/superadmin", label: "Panel Super Admin", icon: Shield }]
+      : []),
     { href: "/admin", label: "Dashboard General", icon: LayoutDashboard },
     { href: "/admin/inventario", label: "Inventario y Bodegas", icon: Package },
     { href: "/admin/produccion", label: "Producción y Recetas", icon: PackagePlus },
